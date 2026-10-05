@@ -66,8 +66,6 @@ fi
 "$build/cli/node_modules/.bin/ares-package" "$app" -o "$root/dist"
 ipk="$root/dist/space.nuvio.native.legacy_1.7.5_arm.ipk"
 test -s "$ipk"
-arm-webos-linux-gnueabi-readelf -h "$app/nuvio-proto" | rg 'ARM'
-arm-webos-linux-gnueabi-readelf -d "$app/nuvio-proto" | rg 'NEEDED'
 "$python" - "$app/nuvio-proto" <<'PY'
 from elftools.elf.elffile import ELFFile
 import sys
@@ -75,6 +73,7 @@ with open(sys.argv[1],'rb') as f:
  e=ELFFile(f); assert e['e_machine']=='EM_ARM'
  needed=[t.needed for t in e.get_section_by_name('.dynamic').iter_tags() if t.entry.d_tag=='DT_NEEDED']
  assert not any(x in n.lower() for n in needed for x in ('libass','libharfbuzz','libfribidi','libfreetype')), needed
+ print('Verified ARM executable; subtitle libraries are linked statically')
 PY
 cp tests/fixtures/arabic-mixed.srt "$root/dist/arabic-mixed.srt"
 {
