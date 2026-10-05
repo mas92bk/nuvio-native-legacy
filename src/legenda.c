@@ -580,6 +580,16 @@ char *legenda_utf8(const char *bytes, long n, const char **origem) {
   return out;
 }
 
+/* Only compiled targets with libass can opt in; LTR tracks retain the
+ * existing overlay and tests/backends without libass keep their fallback. */
+static char *documentoTexto(const LegendaCue *v, int n) {
+#ifdef NV_ASS_LIBASS
+  return plainass_document(v, n);
+#else
+  (void)v; (void)n; return NULL;
+#endif
+}
+
 typedef struct { char url[1400]; unsigned g; } Pedido;
 static void *baixar(void *u) {
   Pedido *p=u; long nb=0; const char *cs="utf-8";
@@ -589,6 +599,7 @@ static void *baixar(void *u) {
   if (corpo && strcmp(cs,"utf-8")) { printf("[legenda] texto em %s, convertido para UTF-8\n",cs); fflush(stdout); }
   int ass=corpo?legenda_eh_ass(corpo):0;
   int n=corpo?legenda_extrair(corpo,&v):0;
+  char *plain = !ass ? documentoTexto(v, n) : NULL;
   double dur=0;
   int aceitarAss=0;
   int i;
@@ -596,7 +607,7 @@ static void *baixar(void *u) {
   pthread_mutex_lock(&trava);
   if(p->g==geracao&&ligada){
     free(cues);cues=v;nCues=n;maiorDur=dur;v=NULL;
-    aceitarAss=ass;
+    aceitarAss=ass ? 1 : plain ? 2 : 0;
     assrender_geracao(geracao);
   }
   pthread_mutex_unlock(&trava);
@@ -604,13 +615,15 @@ static void *baixar(void *u) {
    * diagnostico. Quando o documento ASS chegou inteiro, libass recebe o
    * corpo original, sem passar pelo limite de 768 bytes de uma cue. */
   if (aceitarAss) {
-    assrender_carregar(corpo, strlen(corpo), p->g);
+    if (aceitarAss == 2) assrender_carregar_texto(plain, strlen(plain), p->g);
+    else assrender_carregar(corpo, strlen(corpo), p->g);
     fprintf(stderr, "[legenda] %s\n", assrender_diagnostico());
   } else if (ass && p->g == geracao) {
     // So o dono atual limpa: um download ATRASADO de outra faixa (a pessoa ja
     // trocou) apagava o libass da faixa nova.
     assrender_limpar();
   }
+  free(plain);
   free(corpo);
   free(v);
   printf("[legenda] %s: %d blocos%s\n",ass?"ASS/SSA":"SubRip",n,n?"":" (falha)");
@@ -635,13 +648,14 @@ void legenda_carregar(const char *url) {
 // teste de captura (tests/legenda_ass_shot.c) e a quem um dia entregar cues
 // vindos de dentro do MKV (#92, fase 3).
 static unsigned definirCorpo(const char *corpo, int checar, unsigned dono) {
-  LegendaCue *v=NULL; int n, i; double dur=0; int ass; unsigned g;
+  LegendaCue *v=NULL; int n, i; double dur=0; int ass; unsigned g; char *plain;
   if(!corpo)return 0;
   ass=legenda_eh_ass(corpo);
   n=legenda_extrair(corpo,&v);
+  plain = !ass ? documentoTexto(v, n) : NULL;
   for(i=0;i<n;i++){ double d=v[i].fim-v[i].inicio; if(d>dur)dur=d; }
   pthread_mutex_lock(&trava);
-  if(checar && geracao!=dono){ pthread_mutex_unlock(&trava); free(v); return 0; }
+  if(checar && geracao!=dono){ pthread_mutex_unlock(&trava); free(v); free(plain); return 0; }
   ligada=1;geracao++;g=geracao;free(cues);cues=v;nCues=n;maiorDur=dur;
   pthread_mutex_unlock(&trava);
   assrender_geracao(g);
@@ -650,6 +664,7 @@ static unsigned definirCorpo(const char *corpo, int checar, unsigned dono) {
     assrender_carregar(corpo, strlen(corpo), g);
     fprintf(stderr, "[legenda] %s\n", assrender_diagnostico());
   }
+  if (plain) { assrender_carregar_texto(plain, strlen(plain), g); free(plain); }
   return g;
 }
 

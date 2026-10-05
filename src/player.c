@@ -2994,10 +2994,37 @@ static void desenharLegendaExterna(void){
   assrender_definir_cor(0, 0, 0, 0);
   if (assrender_ativo()) {
     PlrRect area = areaVideoLegenda();
+    if (assrender_texto_simples()) {
+      static const char *const families[] = {
+        "Inter Display", "LG Display", "Droid Sans",
+        "Montserrat", "Roboto", "Atkinson Hyperlegible Next"
+      };
+      PlainAssStyle style = {0};
+      int pct = legEstilo.tamanho, fam = legEstilo.familia;
+      float base = visivel && !faixas_estilo_topo() ? 760.f : 1000.f;
+      if (ofertaProximo()) base = 690.f;
+      base -= legEstilo.posicao >= 3 ? (legEstilo.posicao - 3) * 48.f
+                                    : (legEstilo.posicao - 3) * 20.f;
+      if (pct < 50) pct = 50; if (pct > 200) pct = 200;
+      style.size = (pct / 10) * 4;
+      if (fam < 0 || fam >= (int)(sizeof families / sizeof families[0])) fam = 0;
+      snprintf(style.font, sizeof style.font, "%s", families[fam]);
+      corLegenda(legEstilo.cor, &r, &g, &b);
+      style.rgb = (r << 16) | (g << 8) | b;
+      style.background = legEstilo.fundo >= 0 && legEstilo.fundo <= 4 ? legEstilo.fundo : 0;
+      style.border = legEstilo.borda; style.bold = legEstilo.negrito;
+      style.marginV = (int)(1080.f - base);
+      assrender_definir_texto_estilo(&style);
+      /* Plain captions follow the old screen-space layout; authored ASS
+       * still follows the video rectangle and the author's styling. */
+      area = (PlrRect){0, 0, NV_TELA_W, NV_TELA_H};
+    }
     float alpha = (legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:
                    legEstilo.opacidade==1?.75f:1.f) * entrada;
     assrender_definir_layout(area.x, area.y, area.w, area.h,
-                             video_largura(), video_altura(), escalaFonteAss());
+                             assrender_texto_simples() ? 1920 : video_largura(),
+                             assrender_texto_simples() ? 1080 : video_altura(),
+                             assrender_texto_simples() ? 1.0 : escalaFonteAss());
     assrender_desenhar(posLegenda(), legEstilo.atrasoMs, alpha,
                         0, 0, NV_TELA_W, NV_TELA_H);
     return;

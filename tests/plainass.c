@@ -1,0 +1,140 @@
+#include "plainass.h"
+#include "assrender.h"
+#include "gfx.h"
+#include <ass/ass.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #c); exit(1); } } while (0)
+char *rede_baixar_bin(const char *url, int seconds, long *n) { (void)url; (void)seconds; *n=0; return NULL; }
+void teste_glGenTextures(GLsizei n, GLuint *t) { static GLuint id=1; while(n--) *t++=id++; }
+void teste_glDeleteTextures(GLsizei n, const GLuint *t) { (void)n; (void)t; }
+void teste_glBindTexture(GLenum a, GLuint t) { (void)a; (void)t; }
+void teste_glTexImage2D(GLenum a, GLint b, GLint c, GLsizei w, GLsizei h, GLint d, GLenum e, GLenum f, const void *p) {
+  (void)a;(void)b;(void)c;(void)w;(void)h;(void)d;(void)e;(void)f;(void)p;
+}
+void teste_glTexParameteri(GLenum a, GLenum b, GLint c) { (void)a;(void)b;(void)c; }
+float gfx_tex_aspect_atual;
+void gfx_tex_esquecer(GLuint t) { (void)t; }
+static float yMin, xMin, xMax; static int drawn;
+void gfx_rect(GfxRect r, GLuint t, GfxModo m, float f, float radius, float b, float ba, float cr, float cg, float cb, float a) {
+  (void)t;(void)m;(void)f;(void)radius;(void)b;(void)ba;(void)cr;(void)cg;(void)cb;(void)a;
+  if (!drawn++ || r.y<yMin) yMin=r.y;
+  if (drawn==1 || r.x<xMin) xMin=r.x;
+  if (drawn==1 || r.x+r.w>xMax) xMax=r.x+r.w;
+}
+static int frame(void) {
+  int i, n=0;
+  for(i=0;i<35;i++) { drawn=0; n=assrender_desenhar(1.5,0,1,0,0,1920,1080); usleep(10000); }
+  return n;
+}
+static int bitmapWidth;
+static uint64_t bitmap_hash(ASS_Renderer *r, ASS_Track *t) {
+  int changed=0; ASS_Image *im=ass_render_frame(r,t,1500,&changed);
+  unsigned char *pixels=calloc(1920u*1080u,1); uint64_t hash=1469598103934665603ULL;
+  CHECK(im && pixels);
+  for(;im;im=im->next) {
+    int x,y;
+    for(y=0;y<im->h;y++) for(x=0;x<im->w;x++) {
+      int px=im->dst_x+x, py=im->dst_y+y;
+      unsigned alpha=im->bitmap[y*im->stride+x]*(255u-(im->color&255u))/255u;
+      if(px>=0 && px<1920 && py>=0 && py<1080) {
+        size_t at=(size_t)py*1920u+(unsigned)px;
+        pixels[at]=(unsigned char)(alpha+pixels[at]*(255u-alpha)/255u);
+      }
+    }
+  }
+  { int lo=1920,hi=-1;
+    for(size_t i=0;i<1920u*1080u;i++) {
+      hash=(hash^pixels[i])*1099511628211ULL;
+      if(pixels[i]) { int x=i%1920; if(x<lo)lo=x;if(x>hi)hi=x; }
+    }
+    bitmapWidth=hi-lo+1;
+  }
+  free(pixels);return hash;
+}
+static char *doc(const char *s) {
+  LegendaCue c={0}; c.inicio=1; c.fim=2;
+  snprintf(c.texto,sizeof c.texto,"%s",s);
+  return plainass_document(&c,1);
+}
+int main(void) {
+  char *a, *b; ASS_Library *lib; ASS_Renderer *renderer; ASS_Track *ta,*tb;
+  PlainAssStyle style={0}; FILE *font; char *bytes; long size; float oldY, oldW;
+  int joinedWidth; uint64_t joinedHash;
+  const char *srt="1\n00:00:01,000 --> 00:00:02,000\nمرحبا John (123) ١٢٣!\n\n";
+  CHECK(!plainass_has_arabic("Hello 123")); CHECK(plainass_has_arabic("مرحبا"));
+  CHECK(!plainass_has_arabic("שלום")); CHECK(!plainass_has_arabic("\xe2\x80\x8f"));
+  CHECK(!doc("English only"));
+  a=doc("مرحبا {\\pos(0,0)} \\N \\h\nJohn (123) ١٢٣!"); CHECK(a);
+  CHECK(strstr(a,"\\{\\\xef\xbb\xbfpos(0,0)\\}"));
+  CHECK(strstr(a,"\\\xef\xbb\xbfN")); CHECK(strstr(a,"\\NJohn"));
+  free(a);
+
+  /* Arabic joining must produce a tighter ligature than explicitly
+   * disconnected letters. Preserve join controls in the generated text. */
+  lib=ass_library_init(); CHECK(lib); renderer=ass_renderer_init(lib); CHECK(renderer);
+  font=fopen("deploy/app/fonts/NotoNaskhArabic-Regular.ttf","rb"); CHECK(font);
+  fseek(font,0,SEEK_END);size=ftell(font);rewind(font);bytes=malloc(size);CHECK(bytes);
+  CHECK(fread(bytes,1,size,font)==(size_t)size);fclose(font);
+  ass_add_font(lib,"NotoNaskhArabic-Regular.ttf",bytes,size);free(bytes);
+  ass_set_fonts(renderer,NULL,"Noto Naskh Arabic",ASS_FONTPROVIDER_NONE,NULL,1);
+  ass_set_shaper(renderer,ASS_SHAPING_COMPLEX);
+  ass_set_frame_size(renderer,1920,1080);ass_set_storage_size(renderer,1920,1080);
+  a=doc("لا"); b=doc("ل‍ا"); CHECK(a&&b);
+  ta=ass_read_memory(lib,a,strlen(a),"UTF-8");tb=ass_read_memory(lib,b,strlen(b),"UTF-8");CHECK(ta&&tb);
+  joinedHash=bitmap_hash(renderer,ta);joinedWidth=bitmapWidth;
+  CHECK(strstr(b,"‍"));CHECK(bitmap_hash(renderer,tb));
+  ass_free_track(tb);free(b);b=doc("ل‌ا");CHECK(b);
+  tb=ass_read_memory(lib,b,strlen(b),"UTF-8");CHECK(tb);
+  CHECK(joinedHash!=bitmap_hash(renderer,tb));
+  printf("lam-alef width joined %d disconnected %d\n",joinedWidth,bitmapWidth);
+  CHECK(joinedWidth<bitmapWidth);
+  ass_free_track(ta);ass_free_track(tb);free(a);free(b);
+  /* A colored Latin run must sit to the LEFT of the preceding Arabic
+   * word. This fails with ASS Encoding 1 / per-style-run LTR layout, even
+   * though the individual Arabic words look joined. */
+  a=doc("مرحبا John"); CHECK(a);
+  {
+    char *latin=strstr(a,"John"); int changed=0, nr=0,nw=0;
+    long red=0,white=0; CHECK(latin);
+    b=malloc(strlen(a)+80);CHECK(b);
+    snprintf(b,strlen(a)+80,"%.*s{\\c&H0000FF&}John{\\c&HFFFFFF&}%s",
+             (int)(latin-a),a,latin+4);
+    ta=ass_read_memory(lib,b,strlen(b),"UTF-8");CHECK(ta);
+    CHECK(ta->styles[ta->default_style].Encoding==-1);
+    CHECK(!ass_track_set_feature(ta,ASS_FEATURE_WHOLE_TEXT_LAYOUT,1));
+    CHECK(!ass_track_set_feature(ta,ASS_FEATURE_BIDI_BRACKETS,1));
+    for(ASS_Image *im=ass_render_frame(renderer,ta,1500,&changed);im;im=im->next) {
+      if(im->color==0xff000000u) { red+=im->dst_x+im->w/2;nr++; }
+      if(im->color==0xffffff00u) { white+=im->dst_x+im->w/2;nw++; }
+    }
+    CHECK(nr&&nw);CHECK(red/(double)nr<white/(double)nw);
+    ass_free_track(ta);free(a);free(b);
+  }
+  ass_renderer_done(renderer);ass_library_done(lib);
+  puts("PASS Arabic joining, Unicode controls and mixed-text RTL order");
+
+  /* Production parser, routing, worker, paused style updates and isolation. */
+  legenda_definir_corpo(srt); CHECK(assrender_ativo()); CHECK(assrender_texto_simples());
+  snprintf(style.font,sizeof style.font,"Inter Display");style.size=48;
+  style.rgb=0xffffff;style.border=1;style.marginV=80;
+  assrender_definir_texto_estilo(&style);
+  assrender_definir_layout(0,0,1920,1080,1920,1080,1);
+  CHECK(frame()>0);oldY=yMin;oldW=xMax-xMin;
+  style.marginV=320;style.size=64;style.rgb=0xffff00;style.background=4;
+  style.bold=1;style.border=2;assrender_definir_texto_estilo(&style);
+  CHECK(frame()>0); CHECK(yMin<oldY-150);CHECK(xMax-xMin>oldW);
+  puts("PASS paused style/position changes redraw through production worker");
+  legenda_definir_corpo("1\n00:00:01,000 --> 00:00:02,000\nHello English\n\n");
+  CHECK(!assrender_ativo());CHECK(!assrender_texto_simples());
+  a=doc("مرحبا");CHECK(a);assrender_geracao(100);
+  CHECK(!assrender_carregar_texto(a,strlen(a),99));
+  CHECK(assrender_carregar(a,strlen(a),100));CHECK(!assrender_texto_simples());
+  free(a);legenda_desligar();CHECK(!assrender_ativo());
+  puts("PASS LTR fallback, authored ASS isolation, stale generation and off");
+  return 0;
+}
