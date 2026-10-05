@@ -1,4 +1,4 @@
-# Arabic subtitles: first TV test candidate
+# Arabic subtitles: second TV test candidate
 
 Based on upstream **v1.7.4**, commit `1eee19b64329768891f6776c47bb87a714eb8b3b`.
 Target for final validation: LG C3, firmware 03.43.21. This is an experimental
@@ -64,8 +64,8 @@ Homebrew Channel. In Homebrew Channel Settings, add the release's **apps.json
 download URL** as a repository, then select **Nuvio Legacy Arabic Test**.
 
 The app ID is unchanged because playback permissions and data paths use it.
-The package version is **1.7.5** so Homebrew can offer an upgrade; the internal
-candidate label is **1.7.4-arabic.1**. This is not an official upstream 1.7.5.
+The package version is **1.7.6** so Homebrew can offer an upgrade; the internal
+candidate label is **1.7.4-arabic.2**. This is not an official upstream 1.7.6.
 It replaces the existing installation. For rollback, install upstream's
 official [1.7.4 IPK](https://github.com/iqui27/nuvio-native-legacy/releases/download/v1.7.4/space.nuvio.native.legacy_1.7.4_arm.ipk).
 
@@ -100,3 +100,20 @@ disconnected/reordered UTF-8 glyphs point to layout, but an independently
 misdecoded subtitle file can still fail. Existing parser limits (768 bytes per
 cue, cue count cap, centisecond ASS timing) remain. Tracks containing other scripts alone retain the original renderer. Arabic
 mixed with additional scripts and rare controls need broader language coverage.
+
+## LG C3 feedback and font size follow-up
+
+The user tested candidate 1 on 2026-10-06: Arabic was joined/readable and English
+subtitles worked. Photographs showed Arabic noticeably smaller at 100%, while
+Latin digits retained their normal size. Raising the shared size to 200% enlarged
+English/digits as well. Other behaviors remain unconfirmed on the TV.
+
+Candidate 2 scales only the Arabic face runs by 1.5 on both axes; Latin runs
+explicitly reset to 1.0. The shared size slider and pure-English renderer retain
+their existing behavior. The scale compensates for Noto Naskh's unusually tall
+ascender/descender metrics, rather than changing the font file or scaling every
+subtitle. With the bundled Inter face, host rendering at slider 100% measured
+alef / Latin 5 / Latin H at 24 / 24 / 24 pixels; at 200% they measured 47 / 49 /
+48 pixels. These ink measurements verify relative sizing, not exact equality
+for every letter or font family. Arabic shaping and mixed-text ordering tests
+still pass. After installing, start with the shared size at 100%.

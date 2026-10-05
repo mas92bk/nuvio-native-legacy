@@ -48,7 +48,7 @@ import json, pathlib, sys
 p=pathlib.Path(sys.argv[1]); info=json.loads(p.read_text())
 # Same ID preserves existing webOS permissions and application data paths.
 # Numeric version permits Homebrew Channel to offer this test as an update.
-info.update(version="1.7.5",title="Nuvio Legacy Arabic Test")
+info.update(version="1.7.6",title="Nuvio Legacy Arabic Test")
 p.write_text(json.dumps(info,indent=2)+"\n")
 PY
 # Stage is sourced only from the pinned public package, never a user's app
@@ -64,7 +64,7 @@ if [ ! -x "$build/cli/node_modules/.bin/ares-package" ]; then
   npm install --prefix "$build/cli" --no-audit --no-fund @webos-tools/cli@3.2.6
 fi
 "$build/cli/node_modules/.bin/ares-package" "$app" -o "$root/dist"
-ipk="$root/dist/space.nuvio.native.legacy_1.7.5_arm.ipk"
+ipk="$root/dist/space.nuvio.native.legacy_1.7.6_arm.ipk"
 test -s "$ipk"
 "$python" - "$app/nuvio-proto" <<'PY'
 from elftools.elf.elffile import ELFFile
@@ -77,7 +77,7 @@ with open(sys.argv[1],'rb') as f:
 PY
 cp tests/fixtures/arabic-mixed.srt "$root/dist/arabic-mixed.srt"
 {
-  printf 'Candidate: 1.7.4-arabic.1 (webOS package version 1.7.5)\n'
+  printf 'Candidate: 1.7.4-arabic.2 (webOS package version 1.7.6)\n'
   printf 'Source: %s\n' "$(git rev-parse HEAD)"
   printf 'Baseline: upstream v1.7.4 / 1eee19b64329768891f6776c47bb87a714eb8b3b\n'
   printf 'TV validation: pending LG C3 test\n'

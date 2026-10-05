@@ -60,11 +60,16 @@ static size_t escape_text(char *dst, const char *src) {
              (cp >= 0x1ee00 && cp <= 0x1eeff);
     control = cp == 0x200c || cp == 0x200d || cp == 0x200e || cp == 0x200f ||
               (cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069);
-    /* The SDK disables system font providers. Select the bundled Arabic
-     * face explicitly; Latin keeps the user's family. Layout/BiDi still
-     * receives the complete logical event, including Unicode controls. */
+    /* libass normalizes each face by its ascender + descender. Naskh's
+     * tall metrics (1703 / 1000 em) make its alef 0.394 of the requested
+     * size, versus Inter's cap height 0.601. A 1.5x script scale balances
+     * the visible letters with Latin/digits without changing the shared
+     * size setting. Scale both axes to preserve letter proportions.
+     * The SDK disables system font providers, so select the face explicitly.
+     * Whole-event layout still shapes/BiDi-processes across these tags. */
     if (!control && arabic != arabicFont) {
-      const char *tag = arabic ? "{\\fnNoto Naskh Arabic}" : "{\\fn}";
+      const char *tag = arabic ? "{\\fnNoto Naskh Arabic\\fscx150\\fscy150}"
+                               : "{\\fn\\fscx100\\fscy100}";
       append(dst, &n, tag, strlen(tag)); arabicFont = arabic;
     }
     if (cp == '\r') { src++; continue; }
@@ -75,7 +80,10 @@ static size_t escape_text(char *dst, const char *src) {
     else append(dst, &n, src, len);
     src += len;
   }
-  if (arabicFont) append(dst, &n, "{\\fn}", 5);
+  if (arabicFont) {
+    static const char reset[] = "{\\fn\\fscx100\\fscy100}";
+    append(dst, &n, reset, sizeof reset - 1);
+  }
   return n;
 }
 

@@ -67,7 +67,7 @@ if key.startswith("eyJ"):
         raise SystemExit("Refusing a non-anonymous Supabase key")
 elif not key.startswith("sb_publishable_"):
     raise SystemExit("Unrecognized public client key format")
-values["NV_VERSAO"] = "1.7.4-arabic.1"
+values["NV_VERSAO"] = "1.7.4-arabic.2"
 destination.write_text("\n".join("#define " + k + " " + json.dumps(v) for k, v in values.items()) + "\n")
 destination.chmod(0o600)
 print("Preserved public application configuration; no personal account data read")

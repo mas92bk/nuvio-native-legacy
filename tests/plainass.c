@@ -61,6 +61,20 @@ static char *doc(const char *s) {
   snprintf(c.texto,sizeof c.texto,"%s",s);
   return plainass_document(&c,1);
 }
+static void add_face(const char *name, const void *bytes, size_t n, void *u) {
+  ass_add_font((ASS_Library *)u,name,(const char *)bytes,(int)n);
+}
+static int ink_height(ASS_Image *images, unsigned color) {
+  int lo=1080,hi=-1;
+  for(ASS_Image *im=images;im;im=im->next) {
+    if(im->color!=color)continue;
+    for(int y=0;y<im->h;y++) for(int x=0;x<im->w;x++)
+      if(im->bitmap[y*im->stride+x]>=128) {
+        int py=im->dst_y+y;if(py<lo)lo=py;if(py>hi)hi=py;
+      }
+  }
+  return hi-lo+1;
+}
 int main(void) {
   char *a, *b; ASS_Library *lib; ASS_Renderer *renderer; ASS_Track *ta,*tb;
   PlainAssStyle style={0}; FILE *font; char *bytes; long size; float oldY, oldW;
@@ -81,6 +95,7 @@ int main(void) {
   fseek(font,0,SEEK_END);size=ftell(font);rewind(font);bytes=malloc(size);CHECK(bytes);
   CHECK(fread(bytes,1,size,font)==(size_t)size);fclose(font);
   ass_add_font(lib,"NotoNaskhArabic-Regular.ttf",bytes,size);free(bytes);
+  assrender_ler_pasta_fontes("deploy/app/fonts",add_face,lib,NULL);
   ass_set_fonts(renderer,NULL,"Noto Naskh Arabic",ASS_FONTPROVIDER_NONE,NULL,1);
   ass_set_shaper(renderer,ASS_SHAPING_COMPLEX);
   ass_set_frame_size(renderer,1920,1080);ass_set_storage_size(renderer,1920,1080);
@@ -115,8 +130,29 @@ int main(void) {
     CHECK(nr&&nw);CHECK(red/(double)nr<white/(double)nw);
     ass_free_track(ta);free(a);free(b);
   }
+  /* TV feedback: the Arabic face looked tiny beside Inter digits. Measure
+   * visible ink at normal and maximum slider sizes, in the same event.
+   * The chosen Arabic glyph is alef (roughly cap-height), not a descender. */
+  a=doc("ا5Hا"); CHECK(a);
+  {
+    char *latin=strstr(a,"5H");CHECK(latin);b=malloc(strlen(a)+100);CHECK(b);
+    snprintf(b,strlen(a)+100,"%.*s{\\c&H0000FF&}5{\\c&H00FF00&}H{\\c&HFFFFFF&}%s",
+             (int)(latin-a),a,latin+2);
+    ta=ass_read_memory(lib,b,strlen(b),"UTF-8");CHECK(ta);
+    ass_track_set_feature(ta,ASS_FEATURE_WHOLE_TEXT_LAYOUT,1);
+    for(int fs=40;fs<=80;fs+=40) {
+      int changed=0,ah,dh,lh;ASS_Image *images;
+      ta->styles[ta->default_style].FontSize=fs;
+      images=ass_render_frame(renderer,ta,1500,&changed);CHECK(images);
+      ah=ink_height(images,0xffffff00u);dh=ink_height(images,0xff000000u);lh=ink_height(images,0x00ff0000u);
+      printf("size %d: Arabic alef %dpx, Latin digit %dpx, Latin cap %dpx\n",fs,ah,dh,lh);
+      CHECK(ah>0&&dh>0&&lh>0);CHECK(ah>=dh*.85&&ah<=dh*1.15);
+      CHECK(ah>=lh*.85&&ah<=lh*1.15);
+    }
+    ass_free_track(ta);free(a);free(b);
+  }
   ass_renderer_done(renderer);ass_library_done(lib);
-  puts("PASS Arabic joining, Unicode controls and mixed-text RTL order");
+  puts("PASS Arabic joining, Unicode controls, mixed RTL order and balanced glyph sizes");
 
   /* Production parser, routing, worker, paused style updates and isolation. */
   legenda_definir_corpo(srt); CHECK(assrender_ativo()); CHECK(assrender_texto_simples());

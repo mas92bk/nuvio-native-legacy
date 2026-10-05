@@ -52,7 +52,7 @@ jobs:
           repo=os.environ['GH_REPO']; tag=os.environ['RELEASE_TAG']
           ipk=next(pathlib.Path('dist').glob('*.ipk'))
           base=f'https://github.com/{repo}/releases/download/{tag}/'
-          manifest=dict(id='space.nuvio.native.legacy',version='1.7.5',type='native',title='Nuvio Legacy Arabic Test',appDescription='Experimental Arabic shaping and RTL fix. LG C3 validation pending.',iconUri=f'https://raw.githubusercontent.com/{repo}/{os.environ["BUILD_SHA"]}/deploy/app/icon.png',sourceUrl=f'https://github.com/{repo}/tree/fix/arabic-subtitles',rootRequired=False,ipkUrl=base+ipk.name,ipkHash=dict(sha256=hashlib.sha256(ipk.read_bytes()).hexdigest()),ipkSize=ipk.stat().st_size)
+          manifest=dict(id='space.nuvio.native.legacy',version='1.7.6',type='native',title='Nuvio Legacy Arabic Test',appDescription='Arabic subtitle test with balanced font size. LG C3 sizing validation pending.',iconUri=f'https://raw.githubusercontent.com/{repo}/{os.environ["BUILD_SHA"]}/deploy/app/icon.png',sourceUrl=f'https://github.com/{repo}/tree/fix/arabic-subtitles',rootRequired=False,ipkUrl=base+ipk.name,ipkHash=dict(sha256=hashlib.sha256(ipk.read_bytes()).hexdigest()),ipkSize=ipk.stat().st_size)
           pathlib.Path('dist/manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
           index=dict(packages=[dict(id=manifest['id'],title=manifest['title'],iconUri=manifest['iconUri'],manifestUrl=base+'manifest.json',manifest=manifest,shortDescription=manifest['appDescription'])])
           pathlib.Path('dist/apps.json').write_text(json.dumps(index,indent=2)+'\n')
@@ -60,7 +60,7 @@ jobs:
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --target "$BUILD_SHA" --prerelease \
               --title "LG Arabic test $GITHUB_RUN_NUMBER" \
-              --notes 'Experimental build based on upstream 1.7.4. Uses existing libass for Arabic SRT/VTT shaping and BiDi. Package version 1.7.5 is a test upgrade, not an upstream release. Same application ID replaces the installed app. Real LG C3 validation is pending. For Homebrew Channel, add the apps.json asset URL as a repository. Rollback: install the official 1.7.4 package.'
+              --notes 'Experimental build based on upstream 1.7.4. Uses existing libass for Arabic SRT/VTT shaping and BiDi. Package version 1.7.6 is a test upgrade, not an upstream release. Same application ID replaces the installed app. Initial LG C3 testing confirmed readable Arabic and English. This candidate adjusts Arabic font size; TV sizing validation is pending. For Homebrew Channel, add the apps.json asset URL as a repository. Rollback: install the official 1.7.4 package.'
           fi
           gh release upload "$RELEASE_TAG" dist/* --clobber
           echo "Homebrew Channel source: https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/apps.json" >> "$GITHUB_STEP_SUMMARY"
