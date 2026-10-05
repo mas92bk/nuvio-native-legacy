@@ -21,6 +21,8 @@ jobs:
           bash tests/plainass.sh
           ASAN_OPTIONS=detect_leaks=0 SANITIZE=1 bash tests/plainass.sh
       - name: Compile and package ARM application
+        env:
+          NUVIO_CI_PYTHON: /usr/bin/python3
         run: bash tools/ci-webos.sh
       - uses: actions/upload-artifact@v4
         with:

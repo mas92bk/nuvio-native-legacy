@@ -4,6 +4,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 root=$PWD
 build=${NUVIO_CI_BUILD:-/tmp/nuvio-webos-ci}
+# The SDK supplies its own host Python, without runner-installed modules.
+# Capture the requested host interpreter before prepending the SDK to PATH.
+python=${NUVIO_CI_PYTHON:-$(command -v python3)}
 mkdir -p "$build" "$root/dist"
 fetch_checked() {
   local url=$1 path=$2 sha=$3
@@ -31,7 +34,7 @@ rm -rf "$stage"
 mkdir -p "$stage"
 ar p "$build/original.ipk" data.tar.gz | tar --no-same-owner -xz -C "$stage"
 app="$stage/usr/palm/applications/space.nuvio.native.legacy"
-python3 tools/ci-public-config.py "$app/nuvio-proto" "$build/config.h"
+"$python" tools/ci-public-config.py "$app/nuvio-proto" "$build/config.h"
 trap 'rm -f "$build/config.h"' EXIT
 "$CC" src/*.c -o "$app/nuvio-proto" -O2 -DNV_WEBOS -DNV_ASS_LIBASS \
   -include "$build/config.h" -I"$NUVIO_ASS_ROOT/include" \
@@ -40,7 +43,7 @@ trap 'rm -f "$build/config.h"' EXIT
   -L"$NUVIO_ASS_ROOT/lib" -Wl,--start-group -lass -lharfbuzz -lfribidi -lfreetype -Wl,--end-group
 chmod 755 "$app/nuvio-proto"
 cp deploy/app/fonts/NotoNaskhArabic-* "$app/fonts/"
-python3 - "$app/appinfo.json" <<'PY'
+"$python" - "$app/appinfo.json" <<'PY'
 import json, pathlib, sys
 p=pathlib.Path(sys.argv[1]); info=json.loads(p.read_text())
 # Same ID preserves existing webOS permissions and application data paths.
@@ -50,7 +53,7 @@ p.write_text(json.dumps(info,indent=2)+"\n")
 PY
 # Stage is sourced only from the pinned public package, never a user's app
 # directory. Also refuse known user-state filenames before packaging.
-python3 - "$app" <<'PY'
+"$python" - "$app" <<'PY'
 import pathlib,sys,fnmatch
 names='trakt.txt addons.txt tmdb.txt mdblist.txt ajustes.txt progresso.txt nuvem.txt sessao.txt perfil.txt cliente.txt listas.txt guia-fav.txt debrid.txt fanart.txt p2p.txt collections.json catalogo-rede.bin* stalker-p*.txt xtream-p*.txt listas-p*.txt trakt-p*.txt trakt-fluxo*.txt simkl*.txt conta-*.txt* discord-p*.txt*'.split()
 for p in pathlib.Path(sys.argv[1]).rglob('*'):
@@ -65,7 +68,7 @@ ipk="$root/dist/space.nuvio.native.legacy_1.7.5_arm.ipk"
 test -s "$ipk"
 arm-webos-linux-gnueabi-readelf -h "$app/nuvio-proto" | rg 'ARM'
 arm-webos-linux-gnueabi-readelf -d "$app/nuvio-proto" | rg 'NEEDED'
-python3 - "$app/nuvio-proto" <<'PY'
+"$python" - "$app/nuvio-proto" <<'PY'
 from elftools.elf.elffile import ELFFile
 import sys
 with open(sys.argv[1],'rb') as f:
