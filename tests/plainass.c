@@ -168,7 +168,7 @@ int main(void) {
     a=doc("مرحبا -\n-5 درجات\n- John مرحبا\n-١٠ درجات");CHECK(a);
     CHECK(!strstr(a,"\xe2\x80\x8f"));free(a);
     a=doc("\xe2\x80\x8e– مرحبا");CHECK(a);
-    CHECK(strstr(a,"\xe2\x80\x8f\xe2\x80\x8e–"));free(a);
+    CHECK(strstr(a,"\xe2\x80\x8f–"));free(a);
     puts("PASS Arabic dialogue markers on the right; numeric minus and English-led lines unchanged");
   }
   /* TV feedback: the Arabic face looked tiny beside Inter digits. Measure

@@ -127,9 +127,9 @@ Host reproduction showed that a leading LRM (U+200E) causes the same placement;
 a logical leading dash without it already renders correctly.
 
 For a line with a leading speaker dash whose first substantive strong letter
-is Arabic, the converter now prefixes RLM (U+200F). FriBidi, already linked
-for libass, classifies strong letters. Text order, existing controls and
-embedded Latin/numbers are preserved. Trailing dashes, attached numeric minus
+is Arabic, the converter removes leading LRM before the marker and prefixes
+RLM (U+200F). FriBidi, already linked
+for libass, classifies strong letters. Text order, controls inside the line and embedded Latin/numbers are preserved. Trailing dashes, attached numeric minus
 signs, English-led dialogue and authored ASS are unchanged. This is applied
 per explicit source line, before ASS escaping; no per-frame work or new library.
 

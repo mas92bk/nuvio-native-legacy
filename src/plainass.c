@@ -27,9 +27,9 @@ static int utf8_char(const char *s, uint32_t *cp) {
  * makes a neutral dash appear at the left of otherwise readable Arabic.
  * Establish RTL only for a leading dialogue marker followed by Arabic
  * as the first substantive strong letter. Do not move punctuation or
- * reverse text; preserve embedded controls and let FriBidi lay it out. */
-static int arabic_dialogue(const char *s) {
-  uint32_t cp; int len;
+ * reverse text; remove leading LRM but preserve embedded controls. */
+static const char *arabic_dialogue(const char *s) {
+  uint32_t cp; int len; const char *marker;
   while (*s) {
     len = utf8_char(s, &cp);
     if (cp != ' ' && cp != '\t' && cp != 0x200e && cp != 0x200f && cp != 0xfeff) break;
@@ -38,7 +38,7 @@ static int arabic_dialogue(const char *s) {
   if (!*s) return 0;
   len = utf8_char(s, &cp);
   if (cp != '-' && !(cp >= 0x2010 && cp <= 0x2014)) return 0;
-  s += len;
+  marker = s; s += len;
   /* A dash attached to a digit is a numeric minus, not a speaker marker. */
   utf8_char(s, &cp);
   if ((cp >= '0' && cp <= '9') || (cp >= 0x0660 && cp <= 0x0669) ||
@@ -48,13 +48,13 @@ static int arabic_dialogue(const char *s) {
     len = utf8_char(s, &cp); s += len;
     if (cp == 0x200e || cp == 0x200f) continue;
     type = fribidi_get_bidi_type(cp);
-    if (type == FRIBIDI_TYPE_AL) return 1;
+    if (type == FRIBIDI_TYPE_AL) return marker;
     if (type == FRIBIDI_TYPE_LTR || type == FRIBIDI_TYPE_RTL) return 0;
   }
   return 0;
 }
 #else
-static int arabic_dialogue(const char *s) { (void)s; return 0; }
+static const char *arabic_dialogue(const char *s) { (void)s; return NULL; }
 #endif
 
 int plainass_has_arabic(const char *text) {
@@ -94,11 +94,13 @@ static void append(char *dst, size_t *n, const char *s, size_t len) {
 
 static size_t escape_text(char *dst, const char *src) {
   size_t n = 0; int arabicFont = 0, lineStart = 1;
+  const char *dialogueMarker = NULL;
   while (*src) {
     const unsigned char *u = (const unsigned char *)src;
     unsigned cp = *u; int len = 1, arabic, control;
     if (lineStart) {
-      if (arabic_dialogue(src)) append(dst, &n, "\xe2\x80\x8f", 3);
+      dialogueMarker = arabic_dialogue(src);
+      if (dialogueMarker) append(dst, &n, "\xe2\x80\x8f", 3);
       lineStart = 0;
     }
     if ((*u & 0xe0) == 0xc0 && u[1]) {
@@ -109,6 +111,9 @@ static size_t escape_text(char *dst, const char *src) {
       cp = ((*u & 7u) << 18) | ((u[1] & 63u) << 12) |
            ((u[2] & 63u) << 6) | (u[3] & 63u); len = 4;
     }
+    /* Remove only an editor's leading LRM before a recognized Arabic
+     * speaker marker. Leaving it there can bind the dash to an EN digit. */
+    if (dialogueMarker && src < dialogueMarker && cp == 0x200e) { src += len; continue; }
     arabic = (cp >= 0x0600 && cp <= 0x06ff) ||
              (cp >= 0x0750 && cp <= 0x077f) ||
              (cp >= 0x0870 && cp <= 0x089f) || (cp >= 0x08a0 && cp <= 0x08ff) ||
