@@ -21,9 +21,9 @@ set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 set(OPENSSL_USE_STATIC_LIBS TRUE)
 CMAKE
-cmake -S "$work/nuvio-engine" -B "$work/build-arm" \
+/usr/bin/cmake -S "$work/nuvio-engine" -B "$work/build-arm" \
   -DCMAKE_TOOLCHAIN_FILE="$work/arm.cmake" -DCMAKE_BUILD_TYPE=MinSizeRel \
   -DNUVIO_ENGINE_ENABLE_LIBTORRENT=ON -DNUVIO_ENGINE_BUILD_TESTS=OFF \
   -DCMAKE_C_FLAGS='-ffunction-sections -fdata-sections' \
   -DCMAKE_CXX_FLAGS='-ffunction-sections -fdata-sections -Wno-psabi'
-cmake --build "$work/build-arm" -j"${NUVIO_CI_JOBS:-2}"
+/usr/bin/cmake --build "$work/build-arm" -j"${NUVIO_CI_JOBS:-2}"

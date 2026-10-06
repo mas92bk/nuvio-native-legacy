@@ -17,9 +17,20 @@ jobs:
           sudo apt-get install -y autoconf automake libtool make gcc g++ meson ninja-build pkg-config python3-pyelftools libass-dev libsdl2-dev libgles2-mesa-dev cmake
       - name: Test subtitle routing and Arabic shaping
         run: |
+          bash tests/bidi.sh
+          bash tests/legenda2.sh
           bash tests/legenda_ass.sh
           bash tests/plainass.sh
           ASAN_OPTIONS=detect_leaks=0 SANITIZE=1 bash tests/plainass.sh
+      - name: Cache pinned ARM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            /tmp/nuvio-webos-ci/sdk
+            /tmp/nuvio-webos-ci/sdk.tar.gz
+            /tmp/nuvio-webos-ci/ass
+            /tmp/nuvio-webos-ci/p2p
+          key: webos-v2-a38c582-ass0175-p2p02938d75-1
       - name: Compile and package ARM application
         env:
           NUVIO_CI_PYTHON: /usr/bin/python3

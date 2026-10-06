@@ -8,6 +8,7 @@ import base64
 import json
 import pathlib
 import re
+import struct
 import sys
 from elftools.elf.elffile import ELFFile
 
@@ -57,6 +58,48 @@ with source.open("rb") as stream:
     if len(rec) != 1:
         raise SystemExit("Cannot unambiguously preserve the recommendation endpoint")
     values["NV_REC_URL"] = rec.pop()
+
+    # Preserve the compiled Seekr default without guessing token-shaped
+    # strings elsewhere in the binary. The pinned ARM executable has two
+    # direct calls selecting the same .rodata literal into r0 (MOVW/MOVT).
+    text_section = elf.get_section_by_name(".text")
+    code = text_section.data()
+    base = text_section["sh_addr"]
+    callees = [s["st_value"] for s in symbols.iter_symbols()
+               if s.name == "seekr_definir_chave" and s["st_info"]["type"] == "STT_FUNC"]
+    if len(callees) != 1:
+        raise SystemExit("Missing Seekr configuration call target")
+    addresses = set()
+    for offset in range(36, len(code) - 4, 4):
+        word = struct.unpack_from("<I", code, offset)[0]
+        if word & 0x0f000000 != 0x0b000000:
+            continue
+        displacement = word & 0xffffff
+        if displacement & 0x800000:
+            displacement -= 0x1000000
+        if base + offset + 8 + displacement * 4 != callees[0]:
+            continue
+        low = high = None
+        for at in range(offset - 36, offset, 4):
+            instruction = struct.unpack_from("<I", code, at)[0]
+            opcode = instruction & 0xfff0f000
+            immediate = ((instruction >> 4) & 0xf000) | (instruction & 0xfff)
+            if opcode == 0xe3000000:  # MOVW r0
+                low = immediate
+            elif opcode == 0xe3400000:  # MOVT r0
+                high = immediate
+        if low is not None and high is not None:
+            addresses.add((high << 16) | low)
+    rodata = elf.get_section_by_name(".rodata")
+    if len(addresses) != 1:
+        raise SystemExit("Ambiguous compiled Seekr default")
+    address = addresses.pop() - rodata["sh_addr"]
+    if not 0 <= address < rodata["sh_size"]:
+        raise SystemExit("Seekr default is outside immutable application data")
+    token = rodata.data()[address:address + 96].split(b"\0", 1)[0]
+    if not re.fullmatch(rb"[A-Za-z0-9_-]{1,95}", token):
+        raise SystemExit("Unexpected compiled Seekr default format")
+    values["NV_SEEKR_API_KEY"] = token.decode("ascii")
 
 for name in ("NV_SUPABASE_URL", "NV_SUPABASE_ANON_KEY", "NV_TV_LOGIN_BASE"):
     if not values.get(name):

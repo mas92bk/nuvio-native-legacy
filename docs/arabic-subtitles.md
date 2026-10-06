@@ -18,7 +18,9 @@ family name; UI font selection remains unchanged.
 
 The remote build uses the pinned official 2.0.0 assets and upstream's pinned
 nuvio-engine 02938d75cbc5823dbf47c9006ca6d51a4a08aaf2, with static libtorrent
-and OpenSSL. No engine feature is intentionally omitted. TV upgrade testing
+and OpenSSL. The published client configuration, recommendation endpoint and
+compiled Seekr default are retained in a temporary compiler header which is
+removed before packaging and never printed. No engine feature is intentionally omitted. TV upgrade testing
 remains necessary, including primary Arabic and English, controls, seeking,
 100% mixed digits, and second subtitle stacking. The earlier tested branch
 and arabic-test-9 release are retained for comparison.
