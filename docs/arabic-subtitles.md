@@ -64,8 +64,8 @@ Homebrew Channel. In Homebrew Channel Settings, add the release's **apps.json
 download URL** as a repository, then select **Nuvio Legacy Arabic Test**.
 
 The app ID is unchanged because playback permissions and data paths use it.
-The package version is **1.7.7** so Homebrew can offer an upgrade; the internal
-candidate label is **1.7.4-arabic.3**. This is not an official upstream 1.7.7.
+The package version is **1.7.8** so Homebrew can offer an upgrade; the internal
+candidate label is **1.7.4-arabic.4**. This is not an official upstream 1.7.8.
 It replaces the existing installation. For rollback, install upstream's
 official [1.7.4 IPK](https://github.com/iqui27/nuvio-native-legacy/releases/download/v1.7.4/space.nuvio.native.legacy_1.7.4_arm.ipk).
 
@@ -136,3 +136,42 @@ per explicit source line, before ASS escaping; no per-frame work or new library.
 Color-separated renderer tests assert the dash is at the right of the text on
 both dialogue lines, including LRM-prefixed and mixed Arabic/Latin/numeric
 input. Real-TV confirmation of the affected dialogue is still pending.
+
+## Candidate 4: position updates
+
+LG C3 feedback: some captions appear raised and then later captions return to
+the bottom. Speaker markers improved for one source but not another; the exact
+files and controls remain unavailable, and further marker heuristics are deferred.
+
+Code inspection found the plain overlay changes MarginV when player controls
+are visible (baseline 760 instead of 1000), while direct track style edits leave
+libass's per-event collision position cached. Reproduction with one paused cue
+and an unchanged font/size showed a cue initialized raised remaining raised
+after MarginV returned to its lower value. Its visible top stayed at 712 instead
+of returning to 952 in the host test. The public style setter plus margin-override
+reconfiguration made the same cue alternate correctly between those coordinates.
+This confirms a code defect consistent with the report; TV confirmation is pending.
+
+Apply plain margins via public selective-style APIs on style changes, cycling
+the margins override to invalidate collision layout on host libass 0.17.1 as well
+as the pinned ARM 0.17.5. The latter's style setter also invalidates internally.
+No work occurs on unchanged frames. Clear the override on track replacement so
+authored ASS still owns its margins. Production-worker regression tests change
+only position on the same paused cue twice, check return to the exact bottom
+coordinate, and verify an authored track does not inherit the plain margins.
+
+Further LG C3 testing showed unchanged Arabic position when controls open/close,
+and elevated cues during uninterrupted playback. The native English overlay
+recalculates the active stack from the current baseline. Libass retains collision
+shifts after overlapping cues end. Host reproduction with five short overlapping
+cues and a longer two-line cue left that lone cue at y=564 after the others ended,
+without any UI or style changes. This is a second confirmed code-path difference,
+consistent with the user's report, although the actual subtitle file is unavailable.
+
+The plain worker now clears collision placement when the active cue set changes.
+It computes the next timing boundary and skips the scan until that boundary (or
+a backwards seek); unchanged frames incur only the boundary check. Generated
+plain captions reflow from the current bottom, while authored ASS remains untouched.
+Tests cover the same two-line cue after overlap ends, seeking back through overlap,
+and comparison with a freshly loaded lone cue. This does not truncate overlapping
+source cues; currently active content remains visible.

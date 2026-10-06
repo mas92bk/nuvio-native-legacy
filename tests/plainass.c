@@ -26,11 +26,12 @@ void gfx_rect(GfxRect r, GLuint t, GfxModo m, float f, float radius, float b, fl
   if (drawn==1 || r.x<xMin) xMin=r.x;
   if (drawn==1 || r.x+r.w>xMax) xMax=r.x+r.w;
 }
-static int frame(void) {
+static int frame_at(double time) {
   int i, n=0;
-  for(i=0;i<35;i++) { drawn=0; n=assrender_desenhar(1.5,0,1,0,0,1920,1080); usleep(10000); }
+  for(i=0;i<35;i++) { drawn=0; n=assrender_desenhar(time,0,1,0,0,1920,1080); usleep(10000); }
   return n;
 }
+static int frame(void) { return frame_at(1.5); }
 static int bitmapWidth;
 static uint64_t bitmap_hash(ASS_Renderer *r, ASS_Track *t) {
   int changed=0; ASS_Image *im=ass_render_frame(r,t,1500,&changed);
@@ -202,15 +203,47 @@ int main(void) {
   assrender_definir_texto_estilo(&style);
   assrender_definir_layout(0,0,1920,1080,1920,1080,1);
   CHECK(frame()>0);oldY=yMin;oldW=xMax-xMin;
+  /* Same paused cue, same font/size: show controls, hide them, then change
+   * subtitle position again. Height changes must not mask stale collisions. */
+  for(int repeat=0;repeat<2;repeat++) {
+    style.marginV=320;assrender_definir_texto_estilo(&style);
+    CHECK(frame()>0);CHECK(yMin>oldY-242 && yMin<oldY-238);
+    style.marginV=80;assrender_definir_texto_estilo(&style);
+    CHECK(frame()>0);CHECK(yMin>oldY-2 && yMin<oldY+2);
+    CHECK(xMax-xMin>oldW-2 && xMax-xMin<oldW+2);
+  }
+  puts("PASS position-only controls open/close on the same paused cue");
   style.marginV=320;style.size=64;style.rgb=0xffff00;style.background=4;
   style.bold=1;style.border=2;assrender_definir_texto_estilo(&style);
   CHECK(frame()>0); CHECK(yMin<oldY-150);CHECK(xMax-xMin>oldW);
   puts("PASS paused style/position changes redraw through production worker");
+  {
+    char overlap[4096]={0};size_t used=0;float afterOverlap;
+    for(int i=0;i<5;i++)
+      used+=(size_t)snprintf(overlap+used,sizeof overlap-used,
+        "%d\n00:00:01,000 --> 00:00:02,000\nمرحبا\n\n",i+1);
+    snprintf(overlap+used,sizeof overlap-used,
+      "6\n00:00:01,500 --> 00:00:04,000\nأو احتيال أو كذب\nأو الإساءة إلى بعضهم البعض\n\n");
+    style.size=48;style.marginV=80;style.rgb=0xffffff;
+    style.background=0;style.bold=0;style.border=1;
+    assrender_definir_texto_estilo(&style);
+    legenda_definir_corpo(overlap);
+    CHECK(frame_at(1.6)>0);CHECK(yMin<700);
+    CHECK(frame_at(2.3)>0);afterOverlap=yMin;
+    CHECK(afterOverlap>800);
+    /* Seek back into the overlap, then out again, with no UI changes. */
+    CHECK(frame_at(1.6)>0);CHECK(yMin<700);
+    CHECK(frame_at(2.3)>0);CHECK(yMin>afterOverlap-2 && yMin<afterOverlap+2);
+    legenda_definir_corpo("1\n00:00:01,500 --> 00:00:04,000\nأو احتيال أو كذب\nأو الإساءة إلى بعضهم البعض\n\n");
+    CHECK(frame_at(2.3)>0);CHECK(yMin>afterOverlap-2 && yMin<afterOverlap+2);
+    puts("PASS overlap ending and seeking restore the same bottom as a fresh lone cue");
+  }
   legenda_definir_corpo("1\n00:00:01,000 --> 00:00:02,000\nHello English\n\n");
   CHECK(!assrender_ativo());CHECK(!assrender_texto_simples());
-  a=doc("مرحبا");CHECK(a);assrender_geracao(100);
+  a=doc("مرحبا John (123) ١٢٣!");CHECK(a);assrender_geracao(100);
   CHECK(!assrender_carregar_texto(a,strlen(a),99));
   CHECK(assrender_carregar(a,strlen(a),100));CHECK(!assrender_texto_simples());
+  CHECK(frame()>0);CHECK(yMin>oldY-2 && yMin<oldY+2);
   free(a);legenda_desligar();CHECK(!assrender_ativo());
   puts("PASS LTR fallback, authored ASS isolation, stale generation and off");
   return 0;

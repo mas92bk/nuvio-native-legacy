@@ -104,6 +104,11 @@ static int assWorkerCriado, assTrackAtivo, assWorkerParar, assPedidoPendente;
 static int assTextoSimples;
 static PlainAssStyle plainPed, plainApl;
 static int plainPedValido, plainAplValido;
+/* Protected by assTrava. Re-evaluate active cues only at a timing boundary
+ * or after seeking, not on every video frame. */
+static int plainTimingValid;
+static long long plainLastTime, plainNextBoundary;
+static uint64_t plainActiveSet;
 static int assProntoValido, assAtualValido;
 static double assPedidoMs;
 static unsigned assPedidoGeracao, assPedidoSerial, assSerial;
@@ -399,7 +404,42 @@ static void ass_plain_style_locked(const PlainAssStyle *p) {
   s->Shadow = p->border == 2 ? 4 : 0;
   s->MarginV = p->marginV;
   s->MarginL = s->MarginR = 130;
+  /* Direct style edits leave libass's per-event collision position cached.
+   * A cue first rendered above player controls can stay raised after they
+   * close. Apply margins through the public renderer setter and invalidate
+   * layout even on older libass (0.17.1 doesn't invalidate in the setter).
+   * This runs only when the user's/plain player style changes, not per frame. */
+  ass_set_selective_style_override_enabled(assRenderer, 0);
+  ass_set_selective_style_override(assRenderer, s);
+  ass_set_selective_style_override_enabled(assRenderer, ASS_OVERRIDE_BIT_MARGINS);
   plainApl = *p; plainAplValido = 1;
+}
+
+static void ass_plain_reflow_locked(long long t) {
+  long long next = LLONG_MAX;
+  uint64_t active = UINT64_C(1469598103934665603);
+  if (!assTextoSimples || !assTrack || !plainAplValido) return;
+  if (plainTimingValid && t >= plainLastTime && t < plainNextBoundary) {
+    plainLastTime = t;
+    return;
+  }
+  for (int i = 0; i < assTrack->n_events; i++) {
+    ASS_Event *e = &assTrack->events[i];
+    long long end = e->Start + e->Duration;
+    if (e->Start > t && e->Start < next) next = e->Start;
+    if (end > t && end < next) next = end;
+    if (e->Start <= t && end > t)
+      active = (active ^ (uint64_t)(i + 1)) * UINT64_C(1099511628211);
+  }
+  if (plainTimingValid && active != plainActiveSet) {
+    /* libass keeps a collided cue's old vertical shift even after the
+     * other cues end. Plain captions must reflow from the current bottom,
+     * like the existing text overlay; authored ASS keeps its semantics. */
+    ass_set_selective_style_override_enabled(assRenderer, 0);
+    ass_set_selective_style_override_enabled(assRenderer, ASS_OVERRIDE_BIT_MARGINS);
+  }
+  plainTimingValid = 1; plainLastTime = t;
+  plainNextBoundary = next; plainActiveSet = active;
 }
 
 static void *ass_worker_loop(void *unused) {
@@ -445,6 +485,7 @@ static void *ass_worker_loop(void *unused) {
         layAplEscala = esc;
       }
       if (plainValid) ass_plain_style_locked(&plain);
+      ass_plain_reflow_locked(t);
       images = ass_render_frame(assRenderer, assTrack, t, &changed);
       /* Igual ao publicado: nada a fazer, o quadro em tela continua certo. */
       pthread_mutex_lock(&assFilaTrava);
@@ -612,6 +653,9 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
   }
   if (assTrack) ass_free_track(assTrack);
   assTrack = track;
+  plainTimingValid = 0;
+  /* Authored ASS retains its own margins after a converted plain track. */
+  ass_set_selective_style_override_enabled(assRenderer, 0);
   __atomic_store_n(&assTextoSimples, simples, __ATOMIC_RELEASE);
   plainAplValido = 0;
   assEventos = track->n_events;
