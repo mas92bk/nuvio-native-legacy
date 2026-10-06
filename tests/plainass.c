@@ -130,6 +130,47 @@ int main(void) {
     CHECK(nr&&nw);CHECK(red/(double)nr<white/(double)nw);
     ass_free_track(ta);free(a);free(b);
   }
+  /* TV feedback: an LRM before a speaker dash makes it appear at the
+   * left. Assert its visual position on BOTH lines, including mixed text. */
+  {
+    const char *cases[]={"- مرحبا", "\xe2\x80\x8e- مرحبا",
+      "\xe2\x80\x8e- لتعنفك وما هنالك\n\xe2\x80\x8e- تبا يا رجل",
+      "\xe2\x80\x8e- 5 دولارات John (123)\n- نعم"};
+    for(int k=0;k<4;k++) {
+      a=doc(cases[k]);CHECK(a);char *body=strstr(a,"Dialogue:");CHECK(body);
+      b=malloc(strlen(a)*3+100);CHECK(b);size_t n=(size_t)(body-a);
+      memcpy(b,a,n);
+      while(*body) {
+        if(*body=='-') {
+          const char tag[]="{\\c&H0000FF&}-{\\c&HFFFFFF&}";
+          memcpy(b+n,tag,sizeof tag-1);n+=sizeof tag-1;
+        } else b[n++]=*body;
+        body++;
+      }
+      b[n]=0;ta=ass_read_memory(lib,b,n,"UTF-8");CHECK(ta);
+      ass_track_set_feature(ta,ASS_FEATURE_WHOLE_TEXT_LAYOUT,1);
+      ass_track_set_feature(ta,ASS_FEATURE_BIDI_BRACKETS,1);
+      int changed=0,markers=0;
+      ASS_Image *images=ass_render_frame(renderer,ta,1500,&changed);CHECK(images);
+      for(ASS_Image *dash=images;dash;dash=dash->next) {
+        if(dash->color!=0xff000000u)continue;
+        double dx=dash->dst_x+dash->w/2.,dy=dash->dst_y+dash->h/2.;int sameLine=0;
+        for(ASS_Image *word=images;word;word=word->next) {
+          double wy=word->dst_y+word->h/2.;
+          if(word->color!=0xffffff00u || wy<dy-30 || wy>dy+30)continue;
+          CHECK(dx>word->dst_x+word->w);sameLine++;
+        }
+        CHECK(sameLine);markers++;
+      }
+      CHECK(markers==(k<2?1:2));
+      ass_free_track(ta);free(a);free(b);
+    }
+    a=doc("مرحبا -\n-5 درجات\n- John مرحبا\n-١٠ درجات");CHECK(a);
+    CHECK(!strstr(a,"\xe2\x80\x8f"));free(a);
+    a=doc("\xe2\x80\x8e– مرحبا");CHECK(a);
+    CHECK(strstr(a,"\xe2\x80\x8f\xe2\x80\x8e–"));free(a);
+    puts("PASS Arabic dialogue markers on the right; numeric minus and English-led lines unchanged");
+  }
   /* TV feedback: the Arabic face looked tiny beside Inter digits. Measure
    * visible ink at normal and maximum slider sizes, in the same event.
    * The chosen Arabic glyph is alef (roughly cap-height), not a descender. */

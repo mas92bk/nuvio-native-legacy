@@ -4,6 +4,58 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#ifdef NV_ASS_LIBASS
+#include <fribidi/fribidi.h>
+
+static int utf8_char(const char *s, uint32_t *cp) {
+  const unsigned char *u = (const unsigned char *)s;
+  *cp = *u;
+  if ((*u & 0xe0) == 0xc0 && u[1]) {
+    *cp = ((*u & 31u) << 6) | (u[1] & 63u); return 2;
+  }
+  if ((*u & 0xf0) == 0xe0 && u[1] && u[2]) {
+    *cp = ((*u & 15u) << 12) | ((u[1] & 63u) << 6) | (u[2] & 63u); return 3;
+  }
+  if ((*u & 0xf8) == 0xf0 && u[1] && u[2] && u[3]) {
+    *cp = ((*u & 7u) << 18) | ((u[1] & 63u) << 12) |
+          ((u[2] & 63u) << 6) | (u[3] & 63u); return 4;
+  }
+  return 1;
+}
+
+/* Some SRT editors put an invisible LRM before a speaker marker. That
+ * makes a neutral dash appear at the left of otherwise readable Arabic.
+ * Establish RTL only for a leading dialogue marker followed by Arabic
+ * as the first substantive strong letter. Do not move punctuation or
+ * reverse text; preserve embedded controls and let FriBidi lay it out. */
+static int arabic_dialogue(const char *s) {
+  uint32_t cp; int len;
+  while (*s) {
+    len = utf8_char(s, &cp);
+    if (cp != ' ' && cp != '\t' && cp != 0x200e && cp != 0x200f && cp != 0xfeff) break;
+    s += len;
+  }
+  if (!*s) return 0;
+  len = utf8_char(s, &cp);
+  if (cp != '-' && !(cp >= 0x2010 && cp <= 0x2014)) return 0;
+  s += len;
+  /* A dash attached to a digit is a numeric minus, not a speaker marker. */
+  utf8_char(s, &cp);
+  if ((cp >= '0' && cp <= '9') || (cp >= 0x0660 && cp <= 0x0669) ||
+      (cp >= 0x06f0 && cp <= 0x06f9)) return 0;
+  while (*s && *s != '\n' && *s != '\r') {
+    FriBidiCharType type;
+    len = utf8_char(s, &cp); s += len;
+    if (cp == 0x200e || cp == 0x200f) continue;
+    type = fribidi_get_bidi_type(cp);
+    if (type == FRIBIDI_TYPE_AL) return 1;
+    if (type == FRIBIDI_TYPE_LTR || type == FRIBIDI_TYPE_RTL) return 0;
+  }
+  return 0;
+}
+#else
+static int arabic_dialogue(const char *s) { (void)s; return 0; }
+#endif
 
 int plainass_has_arabic(const char *text) {
   const unsigned char *p = (const unsigned char *)text;
@@ -41,10 +93,14 @@ static void append(char *dst, size_t *n, const char *s, size_t len) {
 }
 
 static size_t escape_text(char *dst, const char *src) {
-  size_t n = 0; int arabicFont = 0;
+  size_t n = 0; int arabicFont = 0, lineStart = 1;
   while (*src) {
     const unsigned char *u = (const unsigned char *)src;
     unsigned cp = *u; int len = 1, arabic, control;
+    if (lineStart) {
+      if (arabic_dialogue(src)) append(dst, &n, "\xe2\x80\x8f", 3);
+      lineStart = 0;
+    }
     if ((*u & 0xe0) == 0xc0 && u[1]) {
       cp = ((*u & 31u) << 6) | (u[1] & 63u); len = 2;
     } else if ((*u & 0xf0) == 0xe0 && u[1] && u[2]) {
@@ -73,7 +129,7 @@ static size_t escape_text(char *dst, const char *src) {
       append(dst, &n, tag, strlen(tag)); arabicFont = arabic;
     }
     if (cp == '\r') { src++; continue; }
-    if (cp == '\n') append(dst, &n, "\\N", 2);
+    if (cp == '\n') { append(dst, &n, "\\N", 2); lineStart = 1; }
     else if (cp == '{' || cp == '}') {
       append(dst, &n, "\\", 1); append(dst, &n, src, 1);
     } else if (cp == '\\') append(dst, &n, "\\\xef\xbb\xbf", 4);

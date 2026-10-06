@@ -64,8 +64,8 @@ Homebrew Channel. In Homebrew Channel Settings, add the release's **apps.json
 download URL** as a repository, then select **Nuvio Legacy Arabic Test**.
 
 The app ID is unchanged because playback permissions and data paths use it.
-The package version is **1.7.6** so Homebrew can offer an upgrade; the internal
-candidate label is **1.7.4-arabic.2**. This is not an official upstream 1.7.6.
+The package version is **1.7.7** so Homebrew can offer an upgrade; the internal
+candidate label is **1.7.4-arabic.3**. This is not an official upstream 1.7.7.
 It replaces the existing installation. For rollback, install upstream's
 official [1.7.4 IPK](https://github.com/iqui27/nuvio-native-legacy/releases/download/v1.7.4/space.nuvio.native.legacy_1.7.4_arm.ipk).
 
@@ -117,3 +117,22 @@ alef / Latin 5 / Latin H at 24 / 24 / 24 pixels; at 200% they measured 47 / 49 /
 48 pixels. These ink measurements verify relative sizing, not exact equality
 for every letter or font family. Arabic shaping and mixed-text ordering tests
 still pass. After installing, start with the shared size at 100%.
+
+## Candidate 3: dialogue markers
+
+LG C3 feedback confirmed candidate 2 Arabic shaping, size and Latin digit rendering.
+Speaker dashes appeared at the visual left in the reported dialogue. The exact
+source SRT has not been captured, so its invisible controls remain unverified.
+Host reproduction showed that a leading LRM (U+200E) causes the same placement;
+a logical leading dash without it already renders correctly.
+
+For a line with a leading speaker dash whose first substantive strong letter
+is Arabic, the converter now prefixes RLM (U+200F). FriBidi, already linked
+for libass, classifies strong letters. Text order, existing controls and
+embedded Latin/numbers are preserved. Trailing dashes, attached numeric minus
+signs, English-led dialogue and authored ASS are unchanged. This is applied
+per explicit source line, before ASS escaping; no per-frame work or new library.
+
+Color-separated renderer tests assert the dash is at the right of the text on
+both dialogue lines, including LRM-prefixed and mixed Arabic/Latin/numeric
+input. Real-TV confirmation of the affected dialogue is still pending.
