@@ -35,6 +35,7 @@
 #include "ponteiro.h"
 #include "tex_cache.h"
 #include "text.h"
+#include "uiarabic.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -320,11 +321,13 @@ static void pedirArtes(void) {
 // mede; devolve a altura e, em *fimX, onde a ultima linha terminou (para a
 // etiqueta que vem logo depois). Cada linha vira no maximo um punhado de
 // trechos (regular/negrito alternados), nao uma textura por palavra.
-typedef struct { char s[240]; int neg; float w, gap; } Trecho;
+typedef struct { char s[1024]; int neg; float w, gap; } Trecho;
 // Largura de um espaco no estilo: o texto nao desenha espaco na ponta da linha.
 static float espacoW(TxtEstilo e) { return (float)(txt_largura(e, "a a") - txt_largura(e, "aa")); }
 static float rico(const char *s, TxtEstilo reg, TxtEstilo neg, float x, float y, float w, float lead,
                   float aReg, float aNeg, float *fimX, int maxL) {
+  char logical[4096];
+  if (uiar_tem_arabe(s)) { uiar_sem_negrito(s,logical,sizeof logical); s=logical; }
   Trecho tr[8];
   int nt = 0, b = 0, linhas = 0, espaco = 0;
   float usado = 0;
@@ -348,7 +351,7 @@ static float rico(const char *s, TxtEstilo reg, TxtEstilo neg, float x, float y,
       if (lt && lt > p) n = (size_t)(lt - p);
       else if (lt == p) n = 1; }
     {
-      char cand[260];
+      char cand[2048];
       float wc;
       int novo = !nt || tr[nt - 1].neg != b;
       const char *base = novo ? "" : tr[nt - 1].s;

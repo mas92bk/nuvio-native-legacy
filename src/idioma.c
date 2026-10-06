@@ -111,7 +111,11 @@ static const char *const TAB_ZHCN[] = {
 static const char *const TAB_ZHTW[] = {
 #include "idioma_zhtw.h"
 };
+static const char *const TAB_AR[] = {
+#include "idioma_ar.h"
+};
 #undef T
+_Static_assert(sizeof TAB_AR / sizeof *TAB_AR == sizeof TAB / sizeof *TAB, "Arabic catalog size");
 // Uma tabela com o numero errado de linhas desalinharia TODAS as traducoes
 // depois dela — falha na compilacao, nao em silencio na tela.
 _Static_assert(sizeof TAB_RO / sizeof *TAB_RO == sizeof TAB / sizeof *TAB,
@@ -176,6 +180,7 @@ _Static_assert(sizeof TAB_ZHTW / sizeof *TAB_ZHTW == sizeof TAB / sizeof *TAB,
 static const char *traduzida(int i, int lg) {
   const char *r = NULL;
   switch (lg) {
+    case IDIOMA_AR: r = TAB_AR[i]; break;
     case IDIOMA_RO: r = TAB_RO[i]; break;
     case IDIOMA_UK: r = TAB_UK[i]; break;
     case IDIOMA_RU: r = TAB_RU[i]; break;

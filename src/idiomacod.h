@@ -21,7 +21,7 @@ enum { IDIOMA_PT = 0, IDIOMA_EN = 1, IDIOMA_RO = 2, IDIOMA_UK = 3, IDIOMA_RU = 4
        IDIOMA_SV = 13, IDIOMA_DA = 14, IDIOMA_NO = 15, IDIOMA_CS = 16, IDIOMA_SK = 17,
        IDIOMA_SL = 18, IDIOMA_HU = 19, IDIOMA_LT = 20, IDIOMA_BS = 21, IDIOMA_SR = 22,
        IDIOMA_BG = 23, IDIOMA_EL = 24, IDIOMA_ID = 25, IDIOMA_VI = 26, IDIOMA_JA = 27,
-       IDIOMA_ZHCN = 28, IDIOMA_ZHTW = 29, IDIOMA_N = 30 };
+       IDIOMA_ZHCN = 28, IDIOMA_ZHTW = 29, IDIOMA_AR = 30, IDIOMA_N = 31 };
 
 // Codigo ISO 639-1 do idioma da interface ("pt", "en", "ro", "uk", "ru", "fr",
 // "de", "es", "it", "nl"... "ja", "zh"). O portugues europeu tambem e "pt", o
@@ -31,6 +31,7 @@ enum { IDIOMA_PT = 0, IDIOMA_EN = 1, IDIOMA_RO = 2, IDIOMA_UK = 3, IDIOMA_RU = 4
 // nao em cada consumidor.
 static inline const char *idioma_iso(int idioma) {
   switch (idioma) {
+    case IDIOMA_AR: return "ar";
     case IDIOMA_EN: return "en";
     case IDIOMA_RO: return "ro";
     case IDIOMA_UK: return "uk";
@@ -65,7 +66,7 @@ static inline const char *idioma_iso(int idioma) {
 // 1 = a interface escreve o decimal com PONTO ("8.4"); 0 = com virgula ("8,4").
 // Ingles, japones e chines usam ponto; os demais 27 usam virgula.
 static inline int idioma_ponto_decimal(int idioma) {
-  return idioma == IDIOMA_EN || idioma == IDIOMA_JA || idioma == IDIOMA_ZHCN ||
+  return idioma == IDIOMA_AR || idioma == IDIOMA_EN || idioma == IDIOMA_JA || idioma == IDIOMA_ZHCN ||
          idioma == IDIOMA_ZHTW;
 }
 
@@ -94,6 +95,7 @@ static inline int idioma_data_asiatica(int idioma) {
 // em turco, grego e indonesio ("Eyl", "Σεπ", "Sep"). Japones e chines nao tem
 // abreviatura: o mes e o numero mais 月 ("9月"), e o vietnamita escreve "thg 9".
 static inline const char *idioma_mes_curto(int idioma, int m0) {
+  static const char *AR[] = { "يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر" };
   static const char *EN[] = { "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec" };
   static const char *PT[] = { "jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez" };
   static const char *RO[] = { "ian","feb","mar","apr","mai","iun","iul","aug","sep","oct","nov","dec" };
@@ -125,6 +127,7 @@ static inline const char *idioma_mes_curto(int idioma, int m0) {
   static const char *CJK[] = { "1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月" };
   if (m0 < 0 || m0 > 11) return "";
   switch (idioma) {
+    case IDIOMA_AR: return AR[m0];
     case IDIOMA_EN: return EN[m0];
     case IDIOMA_RO: return RO[m0];
     case IDIOMA_UK: return UK[m0];

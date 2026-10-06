@@ -30,6 +30,7 @@
 #include "teclado.h"
 #include "tex_cache.h"
 #include "text.h"
+#include "uiarabic.h"
 #include "textogate.h"
 #include <math.h>
 #include <stdio.h>
@@ -510,6 +511,13 @@ static float espaco(void) {
   return (float)(txt_largura(TXT_AJ_SUB, "a a") - txt_largura(TXT_AJ_SUB, "aa"));
 }
 static float frase(const char *s, float x, float y, float maxW, float a) {
+  if (uiar_tem_arabe(s)) {
+    char logical[4096];
+    uiar_sem_negrito(s,logical,sizeof logical);
+    TxtLinha whole=txtC(TXT_AJ_SUB,logical,maxW);
+    if (a>=0) txt_desenhar_alpha(whole,x,y,0.55f*a);
+    return (float)whole.w;
+  }
   char pre[400], neg[200], pos[200];
   const char *b = strstr(s, "<b>"), *e = b ? strstr(b, "</b>") : NULL;
   float w = 0;

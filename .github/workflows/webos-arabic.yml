@@ -1,7 +1,7 @@
-name: Build webOS Arabic test
+name: Build webOS Arabic UI test
 on:
   push:
-    branches: [fix/arabic-subtitles-v2]
+    branches: [feat/arabic-interface]
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,7 +14,7 @@ jobs:
       - name: Install build and test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool make gcc g++ meson ninja-build pkg-config python3-pyelftools libass-dev libsdl2-dev libgles2-mesa-dev cmake
+          sudo apt-get install -y autoconf automake libtool make gcc g++ meson ninja-build pkg-config python3-pyelftools libass-dev libharfbuzz-dev libfreetype-dev libfribidi-dev libsdl2-ttf-dev libsdl2-dev libgles2-mesa-dev cmake
       - name: Test subtitle routing and Arabic shaping
         run: |
           bash tests/bidi.sh
@@ -35,9 +35,17 @@ jobs:
         env:
           NUVIO_CI_PYTHON: /usr/bin/python3
         run: bash tools/ci-webos.sh
+      - name: Test Arabic interface rendering and language selection
+        env:
+          UI_AR_FONT_BASE: /tmp/nuvio-webos-ci/stage/usr/palm/applications/space.nuvio.native.legacy/
+        run: |
+          bash tests/idiomaauto.sh
+          bash tests/uiarabic.sh
+          ASAN_OPTIONS=detect_leaks=0 SANITIZE=1 bash tests/uiarabic.sh
+          python3 tests/idioma_ar.py --fonts "${UI_AR_FONT_BASE}fonts"
       - uses: actions/upload-artifact@v4
         with:
-          name: nuvio-lg-arabic-test
+          name: nuvio-lg-arabic-ui-test
           path: dist/
           if-no-files-found: error
           retention-days: 30
@@ -49,29 +57,29 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: nuvio-lg-arabic-test
+          name: nuvio-lg-arabic-ui-test
           path: dist
       - name: Publish a test release and Homebrew Channel source
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BUILD_SHA: ${{ github.sha }}
-          RELEASE_TAG: arabic-v2-test-${{ github.run_number }}
+          RELEASE_TAG: arabic-ui-test-${{ github.run_number }}
         run: |
           python3 - <<'PY'
           import hashlib,json,os,pathlib
           repo=os.environ['GH_REPO']; tag=os.environ['RELEASE_TAG']
           ipk=next(pathlib.Path('dist').glob('*.ipk'))
           base=f'https://github.com/{repo}/releases/download/{tag}/'
-          manifest=dict(id='space.nuvio.native.legacy',version='2.0.1',type='native',title='Nuvio Legacy Arabic Test',appDescription='Upstream 2.0.0 with the TV-tested Arabic subtitle fix ported from our 1.7.8 build. LG C3 upgrade validation pending.',iconUri=f'https://raw.githubusercontent.com/{repo}/{os.environ["BUILD_SHA"]}/deploy/app/icon.png',sourceUrl=f'https://github.com/{repo}/tree/fix/arabic-subtitles-v2',rootRequired=False,ipkUrl=base+ipk.name,ipkHash=dict(sha256=hashlib.sha256(ipk.read_bytes()).hexdigest()),ipkSize=ipk.stat().st_size)
+          manifest=dict(id='space.nuvio.native.legacy',version='2.0.2',type='native',title='Nuvio Legacy Arabic UI Test',appDescription='Arabic interface and existing TV-tested subtitle fixes, based on upstream 2.0.0. UI validation on LG C3 pending.',iconUri=f'https://raw.githubusercontent.com/{repo}/{os.environ["BUILD_SHA"]}/deploy/app/icon.png',sourceUrl=f'https://github.com/{repo}/tree/feat/arabic-interface',rootRequired=False,ipkUrl=base+ipk.name,ipkHash=dict(sha256=hashlib.sha256(ipk.read_bytes()).hexdigest()),ipkSize=ipk.stat().st_size)
           pathlib.Path('dist/manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
           index=dict(packages=[dict(id=manifest['id'],title=manifest['title'],iconUri=manifest['iconUri'],manifestUrl=base+'manifest.json',manifest=manifest,shortDescription=manifest['appDescription'])])
           pathlib.Path('dist/apps.json').write_text(json.dumps(index,indent=2)+'\n')
           PY
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --target "$BUILD_SHA" --prerelease \
-              --title "LG Arabic test $GITHUB_RUN_NUMBER" \
-              --notes 'Experimental build based on upstream 2.0.0. Uses existing libass for Arabic SRT/VTT shaping and BiDi. Package version 2.0.1 is a test upgrade, not an upstream release. Same application ID replaces the installed app. LG C3 testing confirmed readable Arabic, balanced sizing and Latin digits. Dialogue-marker behavior varies by subtitle source. The previous 1.7.8 candidate also passed TV position testing. This candidate ports those fixes to upstream 2.0.0, retains its native P2P engine and adapts primary subtitle geometry to the second subtitle feature; TV upgrade validation is pending. For Homebrew Channel, add the apps.json asset URL as a repository. Rollback: install the official 2.0.0 package.'
+              --title "LG Arabic UI test $GITHUB_RUN_NUMBER" \
+              --notes 'Arabic UI test based on upstream 2.0.0 and our LG C3-tested subtitle build. Adds Arabic to Settings language choices, translates 4762 interface strings, and shapes Arabic menu text using bundled Noto Sans Arabic and existing HarfBuzz/FriBidi/FreeType libraries. Menu positions and playback controls retain their existing layout. Arabic metadata selection is deferred. Inline bold spans in Arabic tour descriptions are shown as continuous regular text for correct reading order. Package version 2.0.2 is a custom test, not an upstream release. Same app ID replaces the installed app while retaining data paths. CPU rendering, catalog and subtitle regression tests run in CI; real LG C3 UI testing is pending. Add the apps.json asset URL in Homebrew Channel. Previous TV-tested subtitle build: arabic-v2-test-11.'
           fi
           gh release upload "$RELEASE_TAG" dist/* --clobber
           echo "Homebrew Channel source: https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/apps.json" >> "$GITHUB_STEP_SUMMARY"

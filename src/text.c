@@ -9,6 +9,7 @@
 #include "layout.h"
 #include "marco.h"
 #include "bidi.h"
+#include "uiarabic.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <string.h>
@@ -1083,6 +1084,7 @@ int txt_iniciar(const char *dirRecursos, float escala) {
     if (bp) { snprintf(base, sizeof base, "%s", bp); SDL_free(bp); }
   }
 
+  uiar_iniciar(base);
   snprintf(caminhoPeso[TXT_FAMILIA_INTER][0], 512, "%sfonts/InterDisplay-Regular.ttf", base);
   snprintf(caminhoPeso[TXT_FAMILIA_INTER][1], 512, "%sfonts/InterDisplay-Medium.ttf", base);
   snprintf(caminhoPeso[TXT_FAMILIA_INTER][2], 512, "%sfonts/InterDisplay-Bold.ttf", base);
@@ -1204,6 +1206,7 @@ int txt_iniciar(const char *dirRecursos, float escala) {
 }
 
 void txt_encerrar(void) {
+  uiar_encerrar();
   limparCacheTexto();
   // ORDEM: a fonte primeiro, o RWops depois, o buffer por ultimo. A face do
   // FreeType ainda referencia o stream, e o stream, os bytes.
@@ -1244,11 +1247,12 @@ static TxtLinha linhaFamilia(TxtEstilo estilo, const char *s, int r, int g,
                              int b, int a, TxtFamilia familia, int enfase) {
   TxtLinha vazia = {0, 0, 0, 0, 0};
   char limpo[1024];
+  int arabe = (estilo < TXT_LEG_50 || estilo > TXT_LEG_200) && uiar_tem_arabe(s);
   camadaAtualizar();
   if (familia < TXT_FAMILIA_INTER || familia >= TXT_FAMILIA_N)
     familia = TXT_FAMILIA_INTER;
   if (!s || !*s || estilo < 0 || estilo >= TXT_NFONTES ||
-      !fonteDe(familia, estilo, s)) return vazia;
+      !fonteDe(familia, estilo, arabe ? "A" : s)) return vazia;
 
   // ANTES DA CHAVE do cache, para que a linha limpa seja a linha guardada: duas
   // entradas que diferem so por um emoji que ninguem desenha passam a ser a
@@ -1257,21 +1261,25 @@ static TxtLinha linhaFamilia(TxtEstilo estilo, const char *s, int r, int g,
   // o simbolo que a face sabe desenhar fica; so o que viraria quadrado sai. Ela
   // era so da Inter, e com "LG Display" ou "Droid Sans" o ⚡ dos nomes de fonte
   // de addon aparecia como caixa.
-  {
-    s = semDecorativoSemGlifo(fonteDe(familia, estilo, s), s, limpo, sizeof limpo);
+  if (!arabe) {
+    s = semDecorativoSemGlifo(fonteDe(familia, estilo, arabe ? "A" : s), s, limpo, sizeof limpo);
     if (!*s) return vazia;
   }
 
   char chave[288];
+  unsigned long long textHash = 1469598103934665603ull;
+  for (const unsigned char *p = (const unsigned char *)s; *p; ++p) {
+    textHash ^= *p; textHash *= 1099511628211ull;
+  }
   // A VARIANTE CJK entra na chave: o mesmo hanzi tem forma de japones, de chines
   // simplificado e de tradicional (ver Escrita), e trocar o idioma da interface
   // nao pode devolver a textura da lingua anterior.
   if (camada)
-    snprintf(chave, sizeof chave, "E%d:%d:%d:%d:%d|%02x%02x%02x|%.226s", (int)(escCam * 100.0f + 0.5f),
-             (int)familia, (int)estilo, enfase & 3, (int)variacaoCjk(), r & 255, g & 255, b & 255, s);
+    snprintf(chave, sizeof chave, "E%d:%d:%d:%d:%d|%02x%02x%02x|%016llx|%.208s", (int)(escCam * 100.0f + 0.5f),
+             (int)familia, (int)estilo, enfase & 3, (int)variacaoCjk(), r & 255, g & 255, b & 255, textHash, s);
   else
-    snprintf(chave, sizeof chave, "%d:%d:%d:%d|%02x%02x%02x|%.232s", (int)familia,
-             (int)estilo, enfase & 3, (int)variacaoCjk(), r & 255, g & 255, b & 255, s);
+    snprintf(chave, sizeof chave, "%d:%d:%d:%d|%02x%02x%02x|%016llx|%.214s", (int)familia,
+             (int)estilo, enfase & 3, (int)variacaoCjk(), r & 255, g & 255, b & 255, textHash, s);
 
   // Hash da chave para evitar o strcmp em quase todas as entradas: a busca
   // roda para CADA linha de CADA quadro, e comparar 288 bytes centenas de
@@ -1331,7 +1339,7 @@ static TxtLinha linhaFamilia(TxtEstilo estilo, const char *s, int r, int g,
 
   Uint64 t0 = SDL_GetPerformanceCounter();
   SDL_Color cor = { (Uint8)r, (Uint8)g, (Uint8)b, (Uint8)a };
-  TTF_Font *fonte = fonteLegendaDe(estilo, s, familia);
+  TTF_Font *fonte = fonteLegendaDe(estilo, arabe ? "A" : s, familia);
   if (!fonte) return vazia;
   // SOMA ao estilo que a fonte ja tem, e RESTAURA depois. As familias de
   // reserva nascem com TTF_STYLE_BOLD ligado (ver txt_iniciar); zerar aqui
@@ -1340,7 +1348,11 @@ static TxtLinha linhaFamilia(TxtEstilo estilo, const char *s, int r, int g,
   if (enfase) fonte = fonteComEnfase(familia, estilo, fonte, enfase, &novo);
   estiloAnt = TTF_GetFontStyle(fonte);
   if (enfase && novo != estiloAnt) TTF_SetFontStyle(fonte, novo);
-  SDL_Surface *sf = TTF_RenderUTF8_Blended(fonte, s, cor);
+  SDL_Surface *sf = NULL;
+  if (arabe) sf = uiar_render(s, (int)(ESTILOS[estilo].corpo * ESC_T + 0.5f),
+      ESTILOS[estilo].peso == PESO_BOLD || (enfase & 1), enfase & 2,
+      TTF_FontAscent(fonte), TTF_FontHeight(fonte), cor);
+  if (!sf) sf = TTF_RenderUTF8_Blended(fonte, s, cor);
   if (enfase && novo != estiloAnt) TTF_SetFontStyle(fonte, estiloAnt);
   if (!sf) return vazia;
   SDL_Surface *cv = SDL_ConvertSurfaceFormat(sf, SDL_PIXELFORMAT_ABGR8888, 0);
@@ -1420,6 +1432,11 @@ static int larguraLinha(TxtEstilo estilo, const char *s, TxtFamilia familia,
 static int larguraLinhaMedir(TxtEstilo estilo, const char *s, TxtFamilia familia,
                              int enfase) {
   char limpo[1024];
+  if ((estilo < TXT_LEG_50 || estilo > TXT_LEG_200) && uiar_tem_arabe(s)) {
+    int width = uiar_largura(s, (int)(ESTILOS[estilo].corpo * ESC_T + 0.5f),
+        ESTILOS[estilo].peso == PESO_BOLD || (enfase & 1), enfase & 2);
+    if (width >= 0) return (int)(width / ESC_T + 0.5f);
+  }
   if (!fonteDe(familia, estilo, s)) return 0;
   {
     s = semDecorativoSemGlifo(fonteDe(familia, estilo, s), s, limpo, sizeof limpo);
@@ -1488,7 +1505,14 @@ void txt_desenhar_alpha(TxtLinha l, float x, float y, float alpha) {
 
 float txt_tracking(TxtEstilo estilo, const char *s, int r, int g, int b,
                    float x, float y, float alpha, float tracking) {
+  s = i18n(s);
   if (!s || !*s) return 0.0f;
+  /* Arabic joining and BiDi require the entire label, never glyph tracking. */
+  if (uiar_tem_arabe(s)) {
+    TxtLinha l = txt_linha(estilo, s, r, g, b, 255);
+    if (x >= 0.0f) txt_desenhar_alpha(l, x, y, alpha);
+    return (float)l.w;
+  }
   float larg = 0.0f;
   // Percorre por CARACTERE UTF-8, nao por byte: cortar no meio de um acento
   // produz um glifo invalido, e a fonte da LG devolve um retangulo vazio.

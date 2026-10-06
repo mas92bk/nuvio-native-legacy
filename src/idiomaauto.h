@@ -38,7 +38,7 @@ static inline const char *idiomaauto_codigo(int idioma) {
   static const char *C[IDIOMA_N] = {
     "pt", "en", "ro", "uk", "ru", "fr", "de", "es", "it", "nl", "pl", "tr", "pt-PT",
     "sv", "da", "no", "cs", "sk", "sl", "hu", "lt", "bs", "sr", "bg", "el", "id",
-    "vi", "ja", "zh-CN", "zh-TW"
+    "vi", "ja", "zh-CN", "zh-TW", "ar"
   };
   return idioma >= 0 && idioma < IDIOMA_N ? C[idioma] : "en";
 }
@@ -93,6 +93,7 @@ static inline int idiomaauto_mapear(const char *cod) {
           ida_igual(sub[i], "cv")) pt_eu = 1;
     } }
   if (n == 2) {
+    if (ida_igual(p, "ar")) return IDIOMA_AR;
     if (ida_igual(p, "pt")) return pt_eu ? IDIOMA_PTPT : IDIOMA_PT;
     if (ida_igual(p, "pb")) return IDIOMA_PT;
     if (ida_igual(p, "en")) return IDIOMA_EN;
@@ -125,6 +126,7 @@ static inline int idiomaauto_mapear(const char *cod) {
     return -1;
   }
   if (n == 3) {
+    if (ida_igual(p, "ara")) return IDIOMA_AR;
     if (ida_igual(p, "por") || ida_igual(p, "pob")) return IDIOMA_PT;
     if (ida_igual(p, "eng")) return IDIOMA_EN;
     if (ida_igual(p, "ron") || ida_igual(p, "rum")) return IDIOMA_RO;

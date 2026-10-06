@@ -555,7 +555,7 @@ static const char *V_IDIOMA[]    = { "Automático", "Português", "English", "Ro
                                      "Italiano", "Nederlands", "Polski", "Türkçe", "Português (Portugal)",
                                      "Svenska", "Dansk", "Norsk", "Čeština", "Slovenčina", "Slovenščina",
                                      "Magyar", "Lietuvių", "Bosanski", "Srpski", "Български", "Ελληνικά",
-                                     "Bahasa Indonesia", "Tiếng Việt", "日本語", "简体中文", "繁體中文" };
+                                     "Bahasa Indonesia", "Tiếng Việt", "日本語", "简体中文", "繁體中文", "العربية" };
 static const char *V_ANIM[]      = { "Completas", "Reduzidas" };
 static const char *V_FONTE_UI[]  = { "Inter", "LG Display", "Droid Sans",
                                      "Montserrat", "Roboto",
@@ -2140,6 +2140,7 @@ const char *ajustes_tmdb_idioma(void) {
   // trocar o idioma do app tem de refletir sem tocar neste ajuste.
   if (!L[v]) {
     switch (ajustes_idioma()) {
+      case IDIOMA_AR: return "en-US"; /* Arabic metadata is a separate opt-in phase. */
       case IDIOMA_EN: return "en-US";
       case IDIOMA_RO: return "ro-RO";
       case IDIOMA_UK: return "uk-UA";

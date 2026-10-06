@@ -53,12 +53,13 @@ SRC = RAIZ / "src"
 # Na ordem de IDIOMA_* (idiomacod.h). O nome do arquivo e idioma_<cod>.h.
 IDIOMAS = ("ro", "uk", "ru", "fr", "de", "es", "it", "nl", "pl", "tr", "ptpt", "sv",
            "da", "no", "cs", "sk", "sl", "hu", "lt", "bs", "sr", "bg", "el", "id",
-           "vi", "ja", "zhcn", "zhtw")
+           "vi", "ja", "zhcn", "zhtw", "ar")
 CIRILICOS = ("uk", "ru", "bg")
-NAO_LATINOS = CIRILICOS + ("el", "ja", "zhcn", "zhtw")
+NAO_LATINOS = CIRILICOS + ("el", "ja", "zhcn", "zhtw", "ar")
 CJK = ("ja", "zhcn", "zhtw")
 # Escrita que cada lingua nao latina tem de mostrar em toda traducao "de verdade".
 ESCRITA = {
+    "ar": "[\u0600-\u06ff]",
     "uk": "[\u0400-\u04ff]", "ru": "[\u0400-\u04ff]", "bg": "[\u0400-\u04ff]",
     "el": "[\u0370-\u03ff\u1f00-\u1fff]",
     "ja": "[\u3040-\u30ff\u3400-\u9fff]",
@@ -239,6 +240,9 @@ def conferir():
         for ch, n in sorted(usados.items()):
             if "\u0400" <= ch <= "\u04ff" and cod not in CIRILICOS:
                 erro("idioma_%s.h:%d: cirilico (%r) numa tabela que nao e cirilica" % (cod, n, ch))
+            if cod == "ar":
+                ar = [fontes.get("NotoSansArabic-"+w+".ttf",set()) for w in ("Regular","Bold")]
+                if all(ord(ch) in c for c in ar): continue
             if all(ord(ch) in c for c in inter): continue
             if cod in CJK and cjk is not None and ord(ch) in cjk: continue
             erro("idioma_%s.h:%d: U+%04X (%s) nao existe na Inter%s" %

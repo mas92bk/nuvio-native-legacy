@@ -36,11 +36,13 @@ rm -rf "$stage"
 mkdir -p "$stage"
 ar p "$build/original.ipk" data.tar.gz | tar --no-same-owner -xz -C "$stage"
 app="$stage/usr/palm/applications/space.nuvio.native.legacy"
+"$python" tests/idioma_ar.py --fonts "$app/fonts"
 "$python" tools/ci-public-config.py "$app/nuvio-proto" "$build/config.h"
 trap 'rm -f "$build/config.h"' EXIT
 "$CC" src/*.c -o "$app/nuvio-proto" -O2 -DNV_WEBOS -DNV_ASS_LIBASS -DNV_P2P_MOTOR \
   -I"$p2p/nuvio-engine/include" \
-  -include "$build/config.h" -I"$NUVIO_ASS_ROOT/include" \
+  -include "$build/config.h" -I"$NUVIO_ASS_ROOT/include" -I"$NUVIO_ASS_ROOT/include/harfbuzz" \
+  -I"$NUVIO_ASS_ROOT/include/fribidi" -I"$NUVIO_ASS_ROOT/include/freetype2" \
   -I"$NUVIO_SYSROOT/usr/include" -I"$NUVIO_SYSROOT/usr/include/SDL2" \
   "$p2p/build-arm/libnuvio_engine.a" \
   "$p2p/build-arm/_deps/nuvio_libtorrent-build/libtorrent-rasterbar.a" \
@@ -49,13 +51,13 @@ trap 'rm -f "$build/config.h"' EXIT
   -lSDL2 -lSDL2_image -lSDL2_ttf -lGLESv2 -lEGL -ldl -lpthread -lz -lm \
   -L"$NUVIO_ASS_ROOT/lib" -Wl,--start-group -lass -lharfbuzz -lfribidi -lfreetype -Wl,--end-group
 chmod 755 "$app/nuvio-proto"
-cp deploy/app/fonts/NotoNaskhArabic-* "$app/fonts/"
+cp deploy/app/fonts/NotoNaskhArabic-* deploy/app/fonts/NotoSansArabic-* "$app/fonts/"
 "$python" - "$app/appinfo.json" <<'PY'
 import json, pathlib, sys
 p=pathlib.Path(sys.argv[1]); info=json.loads(p.read_text())
 # Same ID preserves existing webOS permissions and application data paths.
 # Numeric version permits Homebrew Channel to offer this test as an update.
-info.update(version="2.0.1",title="Nuvio Legacy Arabic Test")
+info.update(version="2.0.2",title="Nuvio Legacy Arabic UI Test")
 p.write_text(json.dumps(info,indent=2)+"\n")
 PY
 # Stage is sourced only from the pinned public package, never a user's app
@@ -71,7 +73,7 @@ if [ ! -x "$build/cli/node_modules/.bin/ares-package" ]; then
   npm install --prefix "$build/cli" --no-audit --no-fund @webos-tools/cli@3.2.6
 fi
 "$build/cli/node_modules/.bin/ares-package" "$app" -o "$root/dist"
-ipk="$root/dist/space.nuvio.native.legacy_2.0.1_arm.ipk"
+ipk="$root/dist/space.nuvio.native.legacy_2.0.2_arm.ipk"
 test -s "$ipk"
 "$python" - "$app/nuvio-proto" <<'PY'
 from elftools.elf.elffile import ELFFile
@@ -85,7 +87,7 @@ with open(sys.argv[1],'rb') as f:
 PY
 cp tests/fixtures/arabic-mixed.srt "$root/dist/arabic-mixed.srt"
 {
-  printf 'Candidate: 2.0.0-arabic.1 (webOS package version 2.0.1)\n'
+  printf 'Candidate: 2.0.0-arabic-ui.1 (webOS package version 2.0.2)\n'
   printf 'Source: %s\n' "$(git rev-parse HEAD)"
   printf 'Baseline: upstream v2.0.0 / 3018d194\n'
   printf 'TV validation: pending LG C3 test\n'
