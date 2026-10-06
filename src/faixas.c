@@ -478,7 +478,7 @@ static const char *const EST_OPAC[4]  = { "100%", "75%", "50%", "25%" };
  * web faz desde o 1.2.0. Tamanho vira escala proporcional; opacidade e atraso
  * valem igual. */
 static int estiloPreservadoAss(int linha) {
-  return assrender_ativo() && (linha == 1 || linha == 2 || linha == 4 ||
+  return assrender_ativo() && !assrender_texto_simples() && (linha == 1 || linha == 2 || linha == 4 ||
                                linha == 5 || linha == 6 || linha == 8);
 }
 
@@ -490,7 +490,7 @@ static void valorEstilo(int linha, char *dst, size_t tam) {
   }
   switch (linha) {
     case 0:
-      if (assrender_ativo())
+      if (assrender_ativo() && !assrender_texto_simples())
         snprintf(dst, tam, "%d%% \xc2\xb7 ASS \xc3\x97%.2f", e->tamanho, e->tamanho / 120.0), idioma_decimal_texto(dst, ajustes_idioma());
       else
         snprintf(dst, tam, "%d%%", e->tamanho);

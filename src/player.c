@@ -3336,7 +3336,7 @@ static void desenharLegendaExternaCorpo(void) {
   // continua em cima, estimada como sempre.
   leg2Reserva = 0.0f;
   if (junto) legendasui_banda_zerar(); else legendasui_desenhar_secundaria(&g2);
-  if (junto && !assrender_ativo()) {
+  if (junto && (!assrender_ativo() || assrender_texto_simples())) {
     float h2 = legendasui_altura_secundaria(&g2);
     float baseOrig = baseLegendaPrincipal();
     if (h2 > 0.0f) leg2Reserva = h2 + 10.0f;
@@ -3366,10 +3366,34 @@ static void desenharLegendaPrincipal(float *topoPilha){
   assrender_definir_cor(0, 0, 0, 0);
   if (assrender_ativo()) {
     PlrRect area = areaVideoLegenda();
+    if (assrender_texto_simples()) {
+      static const char *const families[] = {
+        "Inter Display", "LG Display", "Droid Sans",
+        "Montserrat", "Roboto", "Atkinson Hyperlegible Next"
+      };
+      PlainAssStyle style = {0};
+      int pct = legEstilo.tamanho, fam = legEstilo.familia;
+      float base = baseLegendaPrincipal();
+      if (pct < 50) pct = 50; if (pct > 200) pct = 200;
+      style.size = (pct / 10) * 4;
+      if (fam < 0 || fam >= (int)(sizeof families / sizeof families[0])) fam = 0;
+      snprintf(style.font, sizeof style.font, "%s", families[fam]);
+      corLegenda(legEstilo.cor, &r, &g, &b);
+      style.rgb = (r << 16) | (g << 8) | b;
+      style.background = legEstilo.fundo >= 0 && legEstilo.fundo <= 4 ? legEstilo.fundo : 0;
+      style.border = legEstilo.borda; style.bold = legEstilo.negrito;
+      style.marginV = (int)(1080.f - base);
+      assrender_definir_texto_estilo(&style);
+      /* Plain captions follow the old screen-space layout; authored ASS
+       * still follows the video rectangle and the author's styling. */
+      area = (PlrRect){0, 0, NV_TELA_W, NV_TELA_H};
+    }
     float alpha = (legEstilo.opacidade==3?.25f:legEstilo.opacidade==2?.5f:
                    legEstilo.opacidade==1?.75f:1.f) * entrada;
     assrender_definir_layout(area.x, area.y, area.w, area.h,
-                             video_largura(), video_altura(), escalaFonteAss());
+                             assrender_texto_simples() ? 1920 : video_largura(),
+                             assrender_texto_simples() ? 1080 : video_altura(),
+                             assrender_texto_simples() ? 1.0 : escalaFonteAss());
     assrender_desenhar(posLegenda(), atraso, alpha,
                         0, 0, NV_TELA_W, NV_TELA_H);
     // R4: libass nao informa onde pintou. Estima duas linhas no tamanho da

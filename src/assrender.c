@@ -101,6 +101,14 @@ static pthread_mutex_t assFilaTrava = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t assFilaCond = PTHREAD_COND_INITIALIZER;
 static pthread_t assWorker;
 static int assWorkerCriado, assTrackAtivo, assWorkerParar, assPedidoPendente;
+static int assTextoSimples;
+static PlainAssStyle plainPed, plainApl;
+static int plainPedValido, plainAplValido;
+/* Protected by assTrava. Re-evaluate active cues only at a timing boundary
+ * or after seeking, not on every video frame. */
+static int plainTimingValid;
+static long long plainLastTime, plainNextBoundary;
+static uint64_t plainActiveSet;
 static int assProntoValido, assAtualValido;
 static double assPedidoMs;
 static unsigned assPedidoGeracao, assPedidoSerial, assSerial;
@@ -215,15 +223,21 @@ static unsigned long long ass_amostra_fonte(const unsigned char *p, size_t n) {
 /* Pasta das fontes do sistema, lida por assrender_ler_pasta_fontes em vez de
  * ass_set_fonts_dir. Guardada porque ass_clear_fonts (teto de fontes anexadas)
  * tira estas junto, e elas precisam voltar antes do ass_set_fonts seguinte. */
-static char assPastaFontes[640];
+static char assPastaFontes[640], assPastaFontesApp[640];
+static int assUsaSistema;
 static void ass_fonte_da_pasta(const char *nome, const void *dados, size_t tam, void *u) {
   (void)u;
+  /* The UI subset shares the family name but lacks mixed-script glyphs.
+   * Plain subtitles use the verified complete face; leave UI selection intact. */
+  if (!strcmp(nome, "NotoNaskhArabic-Subset.ttf")) return;
   ass_add_font(assLib, nome, (const char *)dados, (int)tam);
 }
 static void ass_carregar_pasta_locked(void) {
   int ignorados = 0, lidas;
   if (!assLib || !assPastaFontes[0]) return;
-  lidas = assrender_ler_pasta_fontes(assPastaFontes, ass_fonte_da_pasta, NULL, &ignorados);
+  lidas = assUsaSistema ? assrender_ler_pasta_fontes(assPastaFontes, ass_fonte_da_pasta, NULL, &ignorados) : 0;
+  if (assPastaFontesApp[0] && (!assUsaSistema || strcmp(assPastaFontesApp, assPastaFontes)))
+    assrender_ler_pasta_fontes(assPastaFontesApp, ass_fonte_da_pasta, NULL, NULL);
   fprintf(stderr, "[libass] pasta %s: %d fonte(s); %d arquivo(s) que nao sao fonte ignorado(s)\n",
           assPastaFontes, lidas, ignorados);
 }
@@ -234,11 +248,17 @@ static void ass_aplicar_fontes_locked(void) {
                 ASS_FONTPROVIDER_AUTODETECT, NULL, 1);
 }
 
-static void ass_iniciar_locked(void) {
+static void ass_iniciar_locked(int sistema) {
   char fontDir[640] = "";
   char fallbackFont[768] = "";
   struct timespec t0, t1;
-  if (assLib) return;
+  if (assLib) {
+    if (sistema && !assUsaSistema) {
+      assUsaSistema = 1; ass_carregar_pasta_locked(); ass_aplicar_fontes_locked();
+    }
+    return;
+  }
+  assUsaSistema = sistema;
   clock_gettime(CLOCK_MONOTONIC, &t0);
   assLib = ass_library_init();
   if (!assLib) { ass_diag("libass: falha ao iniciar biblioteca"); return; }
@@ -296,6 +316,11 @@ static void ass_iniciar_locked(void) {
 #endif
   }
 #endif
+  { char *base = SDL_GetBasePath();
+    if (base) { snprintf(assPastaFontesApp, sizeof assPastaFontesApp, "%sfonts", base); SDL_free(base); }
+    if (access(assPastaFontesApp, R_OK))
+      snprintf(assPastaFontesApp, sizeof assPastaFontesApp, "%s", "deploy/app/fonts");
+  }
   snprintf(assPastaFontes, sizeof assPastaFontes, "%s", fontDir);
   ass_carregar_pasta_locked();
   snprintf(assFallbackFont, sizeof assFallbackFont, "%s", fallbackFont);
@@ -362,6 +387,64 @@ static int ass_frame_copiar(ASS_Image *im, AssCpuFrame *out) {
   return 1;
 }
 
+static void ass_plain_style_locked(const PlainAssStyle *p) {
+  ASS_Style *s;
+  if (!assTextoSimples || !assTrack || !assTrack->n_styles) return;
+  if (plainAplValido && !memcmp(p, &plainApl, sizeof *p)) return;
+  s = &assTrack->styles[assTrack->default_style];
+  if (!s->FontName || strcmp(s->FontName, p->font)) {
+    char *name = strdup(p->font);
+    if (!name) return;
+    free(s->FontName); s->FontName = name;
+  }
+  s->FontSize = p->size;
+  s->PrimaryColour = s->SecondaryColour = ((uint32_t)p->rgb << 8);
+  s->OutlineColour = 0x00000000u;
+  s->BackColour = p->background ? (unsigned)(255 - (p->background * 255 * 16 / 100)) : 46u;
+  s->Bold = p->bold ? 1 : 0;
+  s->BorderStyle = p->background ? 4 : 1;
+  s->Outline = p->border == 1 ? 2 : 0;
+  s->Shadow = p->border == 2 ? 4 : 0;
+  s->MarginV = p->marginV;
+  s->MarginL = s->MarginR = 130;
+  /* Direct style edits leave libass's per-event collision position cached.
+   * A cue first rendered above player controls can stay raised after they
+   * close. Apply margins through the public renderer setter and invalidate
+   * layout even on older libass (0.17.1 doesn't invalidate in the setter).
+   * This runs only when the user's/plain player style changes, not per frame. */
+  ass_set_selective_style_override_enabled(assRenderer, 0);
+  ass_set_selective_style_override(assRenderer, s);
+  ass_set_selective_style_override_enabled(assRenderer, ASS_OVERRIDE_BIT_MARGINS);
+  plainApl = *p; plainAplValido = 1;
+}
+
+static void ass_plain_reflow_locked(long long t) {
+  long long next = LLONG_MAX;
+  uint64_t active = UINT64_C(1469598103934665603);
+  if (!assTextoSimples || !assTrack || !plainAplValido) return;
+  if (plainTimingValid && t >= plainLastTime && t < plainNextBoundary) {
+    plainLastTime = t;
+    return;
+  }
+  for (int i = 0; i < assTrack->n_events; i++) {
+    ASS_Event *e = &assTrack->events[i];
+    long long end = e->Start + e->Duration;
+    if (e->Start > t && e->Start < next) next = e->Start;
+    if (end > t && end < next) next = end;
+    if (e->Start <= t && end > t)
+      active = (active ^ (uint64_t)(i + 1)) * UINT64_C(1099511628211);
+  }
+  if (plainTimingValid && active != plainActiveSet) {
+    /* libass keeps a collided cue's old vertical shift even after the
+     * other cues end. Plain captions must reflow from the current bottom,
+     * like the existing text overlay; authored ASS keeps its semantics. */
+    ass_set_selective_style_override_enabled(assRenderer, 0);
+    ass_set_selective_style_override_enabled(assRenderer, ASS_OVERRIDE_BIT_MARGINS);
+  }
+  plainTimingValid = 1; plainLastTime = t;
+  plainNextBoundary = next; plainActiveSet = active;
+}
+
 static void *ass_worker_loop(void *unused) {
   (void)unused;
   for (;;) {
@@ -369,7 +452,8 @@ static void *ass_worker_loop(void *unused) {
     unsigned generation, serial, epoch;
     double ms, esc;
     float ox, oy;
-    int lw, lh, vw, vh;
+    int lw, lh, vw, vh, plainValid;
+    PlainAssStyle plain;
     struct timespec a, b;
     ASS_Image *images = NULL;
     int changed = 0, pronto = 0, igual = 0;
@@ -381,6 +465,7 @@ static void *ass_worker_loop(void *unused) {
     generation = assPedidoGeracao; serial = assPedidoSerial; epoch = assEpoch; ms = assPedidoMs;
     ox = layPedX; oy = layPedY; lw = layPedW; lh = layPedH;
     vw = layPedVW; vh = layPedVH; esc = layPedEscala;
+    plain = plainPed; plainValid = plainPedValido;
     assPedidoPendente = 0;
     pthread_mutex_unlock(&assFilaTrava);
 
@@ -402,6 +487,8 @@ static void *ass_worker_loop(void *unused) {
         ass_set_font_scale(assRenderer, esc);
         layAplEscala = esc;
       }
+      if (plainValid) ass_plain_style_locked(&plain);
+      ass_plain_reflow_locked(t);
       images = ass_render_frame(assRenderer, assTrack, t, &changed);
       /* Igual ao publicado: nada a fazer, o quadro em tela continua certo. */
       pthread_mutex_lock(&assFilaTrava);
@@ -537,7 +624,7 @@ static GLuint ass_textura_locked(int slot, const AssCpuImage *im) {
   return assTex[slot].tex;
 }
 
-static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int manter) {
+static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int manter, int simples) {
   ASS_Track *track;
   char *copia;
   if (!corpo || !tamanho) return 0;
@@ -545,7 +632,7 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
   if (geracao != __atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE)) {
     pthread_mutex_unlock(&assTrava); return 0;
   }
-  ass_iniciar_locked();
+  ass_iniciar_locked(!simples);
   if (!assLib || !assRenderer) { pthread_mutex_unlock(&assTrava); return 0; }
   copia = (char *)malloc(tamanho + 1u);
   if (!copia) { ass_diag("libass: memoria insuficiente para documento"); pthread_mutex_unlock(&assTrava); return 0; }
@@ -557,12 +644,23 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
     ass_diag("libass: documento ASS invalido ou incompleto");
     pthread_mutex_unlock(&assTrava); return 0;
   }
+  if (simples) {
+    /* Converted plain text follows Unicode layout, not VSFilter's legacy
+     * per-style-run layout. Keep authored ASS compatibility unchanged. */
+    ass_track_set_feature(track, ASS_FEATURE_WHOLE_TEXT_LAYOUT, 1);
+    ass_track_set_feature(track, ASS_FEATURE_BIDI_BRACKETS, 1);
+  }
   if (geracao != __atomic_load_n(&assGeracao, __ATOMIC_ACQUIRE)) {
     ass_free_track(track);
     pthread_mutex_unlock(&assTrava); return 0;
   }
   if (assTrack) ass_free_track(assTrack);
   assTrack = track;
+  plainTimingValid = 0;
+  /* Authored ASS retains its own margins after a converted plain track. */
+  ass_set_selective_style_override_enabled(assRenderer, 0);
+  __atomic_store_n(&assTextoSimples, simples, __ATOMIC_RELEASE);
+  plainAplValido = 0;
   assEventos = track->n_events;
   assResolucaoFonte = 0;
   assCoberturaIni = LLONG_MAX; assCoberturaFim = LLONG_MIN;
@@ -575,7 +673,7 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
     } }
   __atomic_store_n(&assTrackGeracao, geracao, __ATOMIC_RELEASE);
   __atomic_store_n(&assTrackAtivo, 1, __ATOMIC_RELEASE);
-  ass_diag("libass: ASS completo ativo");
+  ass_diag(simples ? "libass: texto RTL simples ativo" : "libass: ASS completo ativo");
   pthread_mutex_unlock(&assTrava);
   if (!ass_worker_iniciar()) {
     pthread_mutex_lock(&assTrava);
@@ -604,7 +702,25 @@ static int ass_carregar(const char *corpo, size_t tamanho, unsigned geracao, int
 }
 
 int assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao) {
-  return ass_carregar(corpo, tamanho, geracao, 0);
+  return ass_carregar(corpo, tamanho, geracao, 0, 0);
+}
+
+int assrender_carregar_texto(const char *corpo, size_t tamanho, unsigned geracao) {
+  return ass_carregar(corpo, tamanho, geracao, 0, 1);
+}
+
+int assrender_texto_simples(void) {
+  return assrender_ativo() && __atomic_load_n(&assTextoSimples, __ATOMIC_ACQUIRE);
+}
+
+void assrender_definir_texto_estilo(const PlainAssStyle *style) {
+  if (!style) return;
+  pthread_mutex_lock(&assFilaTrava);
+  if (!plainPedValido || memcmp(style, &plainPed, sizeof *style)) {
+    plainPed = *style; plainPedValido = 1;
+    ++assEpoch; assTemUltimoPedido = 0;
+  }
+  pthread_mutex_unlock(&assFilaTrava);
 }
 
 int assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao) {
@@ -612,7 +728,7 @@ int assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao) {
   pthread_mutex_lock(&assTrava);
   mesma = assTrack && assTrackGeracao == geracao;
   pthread_mutex_unlock(&assTrava);
-  return ass_carregar(corpo, tamanho, geracao, mesma);
+  return ass_carregar(corpo, tamanho, geracao, mesma, 0);
 }
 
 void assrender_limpar(void) {
@@ -656,7 +772,7 @@ void assrender_limpar_fontes(void) {
 int assrender_adicionar_fonte(const char *nome, const void *dados, size_t tamanho) {
   if (!nome || !*nome || !dados || !tamanho || tamanho > (size_t)INT_MAX) return 0;
   pthread_mutex_lock(&assTrava);
-  ass_iniciar_locked();
+  ass_iniciar_locked(1);
   if (assLib) {
     unsigned long long am = ass_amostra_fonte((const unsigned char *)dados, tamanho);
     int i, visto = 0;
@@ -899,7 +1015,7 @@ const char *assrender_diagnostico(void) {
 static void *ass_preaquecer_fio(void *u) {
   (void)u;
   pthread_mutex_lock(&assTrava);
-  ass_iniciar_locked();
+  ass_iniciar_locked(1);
   pthread_mutex_unlock(&assTrava);
   return NULL;
 }
@@ -928,6 +1044,9 @@ void assrender_geracao(unsigned geracao) {
 static char assDiag[96] = "libass: backend nao compilado";
 static unsigned assGeracao;
 
+int assrender_carregar_texto(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
+int assrender_texto_simples(void) { return 0; }
+void assrender_definir_texto_estilo(const PlainAssStyle *style) { (void)style; }
 int assrender_carregar(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
 int assrender_atualizar(const char *corpo, size_t tamanho, unsigned geracao) { (void)corpo; (void)tamanho; (void)geracao; return 0; }
 void assrender_limpar(void) { assGeracao++; }
