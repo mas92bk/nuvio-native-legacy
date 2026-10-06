@@ -28,11 +28,22 @@ fi
 export PKG_CONFIG
 
 fetch() {
-  url=$1; out=$2
-  [ -f "$BUILD/$out" ] || curl -fsSL "$url" -o "$BUILD/$out"
+  url=$1; out=$2; fallback=${3:-}
+  if [ ! -f "$BUILD/$out" ]; then
+    if ! curl --connect-timeout 15 --max-time 120 --retry 2 -fsSL "$url" -o "$BUILD/$out.part"; then
+      [ -n "$fallback" ] || return 1
+      curl --connect-timeout 15 --max-time 120 --retry 2 -fsSL "$fallback" -o "$BUILD/$out.part"
+    fi
+    mv "$BUILD/$out.part" "$BUILD/$out"
+  fi
 }
 
-fetch "https://download-mirror.savannah.gnu.org/releases/freetype/freetype-${FREETYPE_VERSION}.tar.xz" freetype.tar.xz
+fetch "https://sources.buildroot.net/freetype/freetype-${FREETYPE_VERSION}.tar.xz" freetype.tar.xz \
+  "https://download-mirror.savannah.gnu.org/releases/freetype/freetype-${FREETYPE_VERSION}.tar.xz"
+# Same upstream release bytes; checksum recorded by Buildroot 2025.02.
+if [ "$FREETYPE_VERSION" = 2.13.3 ]; then
+  printf '%s  %s\n' 0550350666d427c74daeb85d5ac7bb353acba5f76956395995311a9c6f063289 "$BUILD/freetype.tar.xz" | sha256sum -c -
+fi
 tar -xf "$BUILD/freetype.tar.xz" -C "$BUILD"
 cd "$BUILD/freetype-${FREETYPE_VERSION}"
 ./configure --host="${CC%-gcc}" --prefix="$PREFIX" --enable-static --disable-shared --without-zlib --without-bzip2 --without-png --without-brotli --without-harfbuzz
